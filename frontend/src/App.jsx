@@ -16,7 +16,7 @@ export default function App() {
       // Decoder le token une seule fois pour extraire les infos utilisateur
       const decoded = jwtDecode(token);
       setUserInfo(decoded);
-      axios.get("http://localhost:4000/dashboard", {
+      axios.get(`${import.meta.env.VITE_API_URL}/dashboard`, {
         headers: {
           Authorization: `Bearer ${token}`,
         }
