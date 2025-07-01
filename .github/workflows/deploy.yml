@@ -34,3 +34,6 @@ jobs:
           zip_file: revox-backend.zip
           access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: List files for debug
+        run: ls -la
