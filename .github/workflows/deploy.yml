@@ -23,7 +23,7 @@ jobs:
         working-directory: backend
 
       - name: Zip backend code
-        run: zip -r revox-backend.zip . -x "*.env"
+        run: zip -r ../revox-backend.zip . -x "*.env"
         working-directory: backend
 
       - name: Configure AWS credentials
