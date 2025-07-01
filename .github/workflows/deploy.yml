@@ -1,4 +1,4 @@
-name: Deploy to Lambda
+name: Deploy backend to Lambda
 
 on:
   push:
@@ -13,27 +13,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
       - name: Install dependencies
-        run: |
-          cd backend
-          npm install
+        run: npm install
+        working-directory: backend
 
       - name: Zip backend code
-        run: |
-          cd backend
-          zip -r ../lambda.zip . -x "node_modules/**"
+        run: zip -r ../revox-backend.zip . -x "*.env"
+        working-directory: backend
 
-      - name: Deploy to Lambda
-        uses: aws-actions/aws-lambda-deploy@v1
+      - name: Deploy Lambda
+        uses: appleboy/lambda-action@v0.1.5
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          function-name: revox-backend
+          function_name: revox-backend
           region: eu-west-3
-          zip-file: lambda.zip
-
+          zip_file: revox-backend.zip
+          access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
