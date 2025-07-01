@@ -7,13 +7,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ Route publique
+// Route publique
 app.get("/health", (_, res) => res.send({ status: "OK" }));
 
-// 🔐 Route protégée
+// Route protégée
 app.get("/dashboard", checkJwt, (req, res) => {
-  // `req.auth.sub` contient l’ID de l’utilisateur Cognito
   res.json({ message: "Données sensibles pour " + req.auth.sub });
 });
 
-app.listen(4000, () => console.log("API on http://localhost:4000"));
+// Ce bloc est utilisé en local uniquement
+if (process.env.LOCAL === "true") {
+  app.listen(4000, () => console.log("API on http://localhost:4000"));
+}
+
+// Export du handler Lambda
+const awsServerlessExpress = require("aws-serverless-express");
+const server = awsServerlessExpress.createServer(app);
+exports.handler = (event, context) => awsServerlessExpress.proxy(server, event, context);
