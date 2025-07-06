@@ -104,3 +104,24 @@ resource "aws_dynamodb_table" "extractions" {
   # s3_key, status, created_at, updated_at, error_message)
   # seront stockés automatiquement.
 }
+
+########################################
+# SQS : file pour orchestrer les extractions
+########################################
+resource "aws_sqs_queue" "extraction_queue" {
+  name                       = "revox-extraction-queue"
+  visibility_timeout_seconds = 300    # 5 min pour traiter chaque message
+  message_retention_seconds  = 86400  # conserve 24 h
+}
+
+# Output de l’URL pour pouvoir la consommer côté backend
+output "extraction_queue_url" {
+  description = "URL de la queue SQS pour les extractions"
+  value       = aws_sqs_queue.extraction_queue.url
+}
+
+# Output de l’ARN si jamais utile
+output "extraction_queue_arn" {
+  description = "ARN de la queue SQS pour les extractions"
+  value       = aws_sqs_queue.extraction_queue.arn
+}
