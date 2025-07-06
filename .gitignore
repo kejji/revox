@@ -24,6 +24,7 @@ Thumbs.db
 /infra/crash.log
 infra/terraform.tfstate
 infra/terraform.tfstate.backup
+/infra/terraform.tfvars
 
 # Logs
 **/*.log
