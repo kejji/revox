@@ -182,6 +182,12 @@ resource "aws_lambda_permission" "allow_apigw" {
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
 
+# 6. Permission pour que API GW puisse invoquer Lambda
+output "http_api_endpoint" {
+  description = "URL publique de l’HTTP API (stage $default)"
+  value       = aws_apigatewayv2_api.http_api.api_endpoint
+}
+
 ########################################
 # Data source pour récupérer la Lambda Express existante
 ########################################
