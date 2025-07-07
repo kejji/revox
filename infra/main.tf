@@ -3,6 +3,8 @@ provider "aws" {
   profile = var.aws_profile
 }
 
+data "aws_caller_identity" "current" {}
+
 # 1. Création du User Pool
 resource "aws_cognito_user_pool" "revox_user_pool" {
   name = "revox-user-pool"
@@ -171,6 +173,15 @@ resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.http_api.id
   name        = "$default"
   auto_deploy = true
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.apigw_logs.arn
+    format = "{\"requestId\":\"$context.requestId\",\"routeKey\":\"$context.routeKey\",\"status\":\"$context.status\",\"error\":\"$context.error.message\"}"
+
+  }
+  default_route_settings {
+    detailed_metrics_enabled = true
+    logging_level = "INFO"
+  }
 }
 
 # 5. Permission pour que API GW puisse invoquer Lambda
@@ -194,4 +205,43 @@ output "http_api_endpoint" {
 data "aws_lambda_function" "api" {
   function_name = "revox-backend"
 }
+
+########################################
+# Function URL pour invoquer directement Lambda 
+########################################
+resource "aws_lambda_function_url" "api_url" {
+  function_name      = data.aws_lambda_function.api.function_name
+  authorization_type = "NONE"
+}
+
+output "function_url" {
+  description = "URL directe de la Lambda pour debug"
+  value       = aws_lambda_function_url.api_url.function_url
+}
+
+########################################
+# CloudWatch Log Group pour les logs d’API Gateway
+########################################
+resource "aws_cloudwatch_log_group" "apigw_logs" {
+  name              = "/aws/http-api/${aws_apigatewayv2_api.http_api.name}"
+  retention_in_days = 14
+}
+
+resource "aws_cloudwatch_log_resource_policy" "apigw_logs" {
+  policy_name = "APIGatewayAccessLogsPolicy"
+  policy_document = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        },
+        Action = "logs:PutLogEvents",
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/http-api/revox-api:*"
+      }
+    ]
+  })
+}
+
 
