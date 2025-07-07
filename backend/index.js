@@ -15,12 +15,30 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// extraire le sub Cognito (via Authorization header)
+app.use((req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const token = authHeader.split(" ")[1];
+      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+      req.auth = { sub: payload.sub };
+    } catch (err) {
+      console.warn("Token malformé :", err.message);
+    }
+  }
+  next();
+});
+
 // Route publique
 app.get("/health", (_, res) => res.send({ status: "OK" }));
 
 // Route dashboard protégée via API GW
 app.get("/dashboard", (req, res) => {
-  res.json({ message: "Données sensibles" });
+  if (!req.auth?.sub) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  res.json({ message: "Données sensibles pour " + req.auth.sub });
 });
 
 // Route protégée extraction
