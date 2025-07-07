@@ -31,10 +31,14 @@ npm install
 npm run dev
 ```
 
-#### `.env` file:
+#### `.env` file (from `.env.example`)
 ```
-COGNITO_USER_POOL_ID=<your_user_pool_id>
-COGNITO_APP_CLIENT_ID=<your_app_client_id>
+AWS_REGION=eu-west-3                            # same as var.aws_region
+COGNITO_USER_POOL_ID=<your_user_pool_id>        # terraform output cognito_user_pool_id
+COGNITO_APP_CLIENT_ID=<your_app_client_id>      # terraform output cognito_app_client_id
+EXTRACTION_QUEUE_URL=<sqs_url>                  # terraform output extraction_queue_url
+EXTRACTIONS_TABLE=revox_extractions             # DynamoDB table name
+LOCAL=true                                      # start local Express server
 ```
 
 ---
@@ -47,10 +51,11 @@ npm install
 npm run dev
 ```
 
-#### `.env` file:
+#### `.env` file (from `.env.example`)
 ```
-VITE_COGNITO_USER_POOL_ID=<your_user_pool_id>
-VITE_COGNITO_APP_CLIENT_ID=<your_app_client_id>
+VITE_COGNITO_USER_POOL_ID=<your_user_pool_id>   # terraform output cognito_user_pool_id
+VITE_COGNITO_APP_CLIENT_ID=<your_app_client_id> # terraform output cognito_app_client_id
+VITE_API_URL=<backend_api_url>                  # or terraform output http_api_endpoint
 ```
 
 ---
@@ -70,27 +75,12 @@ VITE_COGNITO_APP_CLIENT_ID=<your_app_client_id>
 revox/
 ├── backend/       → Express backend (JWT-protected)
 ├── frontend/      → React + Amplify frontend
-├── infra/         → Terraform configuration (Cognito)
+├── infra/         → Terraform configuration (Cognito, API Gateway, DynamoDB, SQS)
 └── README.md      → This file 😉
 ```
 
 ---
 
-## ⛓️ Database migrations
-
-The Lambda code used to run migrations lives in `infra/mirgration`. It is not versioned as a ZIP file.
-To (re)generate `infra/migration.zip` during deployment:
-
-```bash
-cd infra/mirgration
-npm install --production
-zip -r ../migration.zip .
-```
-
-Include this step in your CI/CD pipeline or Terraform scripts before applying the infrastructure.
-
----
-
 ## 🗓️ Last updated
 
-2025-06-29
+2025-07-08
