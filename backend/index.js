@@ -36,6 +36,5 @@ const serverlessExpress = require("@vendia/serverless-express");
 const server = serverlessExpress({ app });
 
 exports.handler = (event, context) => {
-  // @vendia/serverless-express gère automatiquement API GW v1, v2 et Function URLs
   return server(event, context);
 };
