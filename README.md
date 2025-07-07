@@ -76,6 +76,21 @@ revox/
 
 ---
 
+## ⛓️ Database migrations
+
+The Lambda code used to run migrations lives in `infra/mirgration`. It is not versioned as a ZIP file.
+To (re)generate `infra/migration.zip` during deployment:
+
+```bash
+cd infra/mirgration
+npm install --production
+zip -r ../migration.zip .
+```
+
+Include this step in your CI/CD pipeline or Terraform scripts before applying the infrastructure.
+
+---
+
 ## 🗓️ Last updated
 
 2025-06-29
