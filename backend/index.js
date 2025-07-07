@@ -6,7 +6,9 @@ const EXTRACTIONS_TABLE = process.env.EXTRACTIONS_TABLE;
 
 const express = require("express");
 const cors    = require("cors");
-const { checkJwt } = require("./auth");
+
+// Middleware
+const decodeJwtSub = require("./auth");
 
 // Import de la logique d’extraction
 const { createExtraction } = require("./routes/extract");
@@ -14,21 +16,7 @@ const { createExtraction } = require("./routes/extract");
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-// extraire le sub Cognito (via Authorization header)
-app.use((req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    try {
-      const token = authHeader.split(" ")[1];
-      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
-      req.auth = { sub: payload.sub };
-    } catch (err) {
-      console.warn("Token malformé :", err.message);
-    }
-  }
-  next();
-});
+app.use(decodeJwtSub);
 
 // Route publique
 app.get("/health", (_, res) => res.send({ status: "OK" }));
@@ -41,8 +29,13 @@ app.get("/dashboard", (req, res) => {
   res.json({ message: "Données sensibles pour " + req.auth.sub });
 });
 
-// Route protégée extraction
-app.post("/extract", checkJwt, createExtraction);
+// Route extract protégée via API GW
+app.post("/extract", (req, res) => {
+  if (!req.auth?.sub) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  createExtraction(req, res);
+});
 
 // Pour le dev local uniquement
 if (process.env.LOCAL === "true") {
