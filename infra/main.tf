@@ -125,3 +125,67 @@ output "extraction_queue_arn" {
   description = "ARN de la queue SQS pour les extractions"
   value       = aws_sqs_queue.extraction_queue.arn
 }
+
+########################################
+# API Gateway
+########################################
+
+# 1. API HTTP
+resource "aws_apigatewayv2_api" "http_api" {
+  name          = "revox-api"
+  protocol_type = "HTTP"
+}
+
+# 2. Intégration unique vers ta Lambda
+resource "aws_apigatewayv2_integration" "api_integration" {
+  api_id                 = aws_apigatewayv2_api.http_api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = data.aws_lambda_function.api.arn
+  payload_format_version = "2.0"
+}
+
+# 3. Les routes existantes
+# GET /health
+resource "aws_apigatewayv2_route" "health" {
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /health"
+  target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+}
+
+# GET /dashboard
+resource "aws_apigatewayv2_route" "dashboard" {
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /dashboard"
+  target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+}
+
+# ANY /{proxy+} (inclut POST /extract et toutes tes autres routes Express)
+resource "aws_apigatewayv2_route" "proxy" {
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "ANY /{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+}
+
+# 4. Stage par défaut
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.http_api.id
+  name        = "$default"
+  auto_deploy = true
+}
+
+# 5. Permission pour que API GW puisse invoquer Lambda
+resource "aws_lambda_permission" "allow_apigw" {
+  statement_id  = "b5f844c3-68f5-5e58-9c26-6f00925e94b2"
+  action        = "lambda:InvokeFunction"
+  function_name = data.aws_lambda_function.api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}
+
+########################################
+# Data source pour récupérer la Lambda Express existante
+########################################
+data "aws_lambda_function" "api" {
+  function_name = "revox-backend"
+}
+
