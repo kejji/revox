@@ -18,9 +18,9 @@ app.use(express.json());
 // Route publique
 app.get("/health", (_, res) => res.send({ status: "OK" }));
 
-// Route protégée dashboard
-app.get("/dashboard", checkJwt, (req, res) => {
-  res.json({ message: "Données sensibles pour " + req.auth.sub });
+// Route dashboard protégée via API GW
+app.get("/dashboard", (req, res) => {
+  res.json({ message: "Données sensibles" });
 });
 
 // Route protégée extraction

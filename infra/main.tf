@@ -46,6 +46,21 @@ output "cognito_app_client_id" {
 }
 
 ########################################
+# Athorizer Cognito
+########################################
+resource "aws_apigatewayv2_authorizer" "cognito_authorizer" {
+  name                       = "revox-cognito-authorizer"
+  api_id                     = aws_apigatewayv2_api.http_api.id
+  authorizer_type            = "JWT"
+  identity_sources           = ["$request.header.Authorization"]
+  jwt_configuration {
+    audience = [aws_cognito_user_pool_client.revox_app_client.id]
+    issuer   = "https://${aws_cognito_user_pool.revox_user_pool.endpoint}"
+  }
+}
+
+
+########################################
 # DynamoDB: table des utilisateurs
 ########################################
 resource "aws_dynamodb_table" "users" {
@@ -156,9 +171,11 @@ resource "aws_apigatewayv2_route" "health" {
 
 # GET /dashboard
 resource "aws_apigatewayv2_route" "dashboard" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "GET /dashboard"
-  target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+  api_id             = aws_apigatewayv2_api.http_api.id
+  route_key          = "GET /dashboard"
+  target             = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
 }
 
 # ANY /{proxy+} (inclut POST /extract et toutes tes autres routes Express)
