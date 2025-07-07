@@ -178,6 +178,15 @@ resource "aws_apigatewayv2_route" "dashboard" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
 }
 
+# POST /extract
+resource "aws_apigatewayv2_route" "extract" {
+  api_id             = aws_apigatewayv2_api.http_api.id
+  route_key          = "POST /extract"
+  target             = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
+}
+
 # ANY /{proxy+} (inclut POST /extract et toutes tes autres routes Express)
 resource "aws_apigatewayv2_route" "proxy" {
   api_id    = aws_apigatewayv2_api.http_api.id
