@@ -21,9 +21,16 @@ terraform apply
 ```
 ➡️ Copy the `cognito_user_pool_id` and `cognito_app_client_id` values shown after apply.
 
+### 3. Build the migration Lambda
+```bash
+cd infra
+./build_migration_zip.sh
+```
+This script produces `migration.zip` from the contents of `infra/migration`.
+
 ---
 
-### 3. Start the Express backend
+### 4. Start the Express backend
 ```bash
 cd backend
 cp .env.example .env  # If the file doesn’t exist, create it
@@ -39,7 +46,7 @@ COGNITO_APP_CLIENT_ID=<your_app_client_id>
 
 ---
 
-### 4. Start the React frontend
+### 5. Start the React frontend
 ```bash
 cd frontend
 cp .env.example .env
@@ -71,6 +78,7 @@ revox/
 ├── backend/       → Express backend (JWT-protected)
 ├── frontend/      → React + Amplify frontend
 ├── infra/         → Terraform configuration (Cognito)
+│   └── migration/ → Lambda for database migrations
 └── README.md      → This file 😉
 ```
 
@@ -78,4 +86,4 @@ revox/
 
 ## 🗓️ Last updated
 
-2025-06-29
+2025-07-07
