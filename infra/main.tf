@@ -85,7 +85,7 @@ resource "aws_dynamodb_table" "users" {
 # DynamoDB: table des extractions CSV
 ########################################
 resource "aws_dynamodb_table" "extractions" {
-  name         = "revox_extractions"
+  name = "revox_extractions"
   billing_mode = "PAY_PER_REQUEST"
 
   hash_key  = "user_id"
@@ -111,9 +111,9 @@ resource "aws_dynamodb_table" "extractions" {
 
   # GSI pour requêtes par status + date
   global_secondary_index {
-    name            = "status-createdAt-index"
-    hash_key        = "status"
-    range_key       = "created_at"
+    name = "status-createdAt-index"
+    hash_key = "status"
+    range_key = "created_at"
     projection_type = "ALL"
   }
 
@@ -126,7 +126,7 @@ resource "aws_dynamodb_table" "extractions" {
 # SQS : file pour orchestrer les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {
-  name                       = "revox-extraction-queue"
+  name = "revox-extraction-queue"
   visibility_timeout_seconds = 300    # 5 min pour traiter chaque message
   message_retention_seconds  = 86400  # conserve 24 h
 }
@@ -134,7 +134,7 @@ resource "aws_sqs_queue" "extraction_queue" {
 # Output de l’URL pour pouvoir la consommer côté backend
 output "extraction_queue_url" {
   description = "URL de la queue SQS pour les extractions"
-  value       = aws_sqs_queue.extraction_queue.url
+  value = aws_sqs_queue.extraction_queue.url
 }
 
 # Output de l’ARN si jamais utile
@@ -157,7 +157,7 @@ resource "aws_apigatewayv2_api" "http_api" {
 resource "aws_apigatewayv2_integration" "api_integration" {
   api_id                 = aws_apigatewayv2_api.http_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = data.aws_lambda_function.api.arn
+  integration_uri        = aws_lambda_function.api.arn
   payload_format_version = "2.0"
 }
 
@@ -216,7 +216,7 @@ resource "aws_apigatewayv2_stage" "default" {
 resource "aws_lambda_permission" "allow_apigw" {
   statement_id  = "b5f844c3-68f5-5e58-9c26-6f00925e94b2"
   action        = "lambda:InvokeFunction"
-  function_name = data.aws_lambda_function.api.function_name
+  function_name = aws_lambda_function.api.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
@@ -228,23 +228,43 @@ output "http_api_endpoint" {
 }
 
 ########################################
-# Data source pour récupérer la Lambda Express existante
-########################################
-data "aws_lambda_function" "api" {
-  function_name = "revox-backend"
-}
-
-########################################
 # Function URL pour invoquer directement Lambda 
 ########################################
 resource "aws_lambda_function_url" "api_url" {
-  function_name      = data.aws_lambda_function.api.function_name
+  function_name      = aws_lambda_function.api.function_name
   authorization_type = "NONE"
 }
 
 output "function_url" {
   description = "URL directe de la Lambda pour debug"
   value       = aws_lambda_function_url.api_url.function_url
+}
+
+
+########################################
+#  Ressource gérant la Lambda Express
+########################################
+resource "aws_lambda_function" "api" {
+  function_name    = "revox-backend"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "index.handler"
+  runtime          = "nodejs18.x"
+  filename         = "${path.module}/dummy.zip"
+  source_code_hash = filebase64sha256("${path.module}/dummy.zip")
+  environment {
+    variables = {
+      EXTRACTIONS_TABLE    = aws_dynamodb_table.extractions.name
+      EXTRACTION_QUEUE_URL = aws_sqs_queue.extraction_queue.url
+    }
+  }
+  # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
+  lifecycle {
+    # Ignore tout changement de code : c'est GitHub Actions qui push réellement
+    ignore_changes = [
+      filename,
+      source_code_hash,
+    ]
+  }
 }
 
 ########################################
@@ -271,5 +291,40 @@ resource "aws_cloudwatch_log_resource_policy" "apigw_logs" {
     ]
   })
 }
+
+########################################
+# IAM pour la Lambda "revox-backend"
+########################################
+resource "aws_iam_role" "lambda_exec" {
+  name = "revox-backend-exec-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+# Permission d’écrire les logs CloudWatch
+resource "aws_iam_role_policy_attachment" "lambda_logs" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# Permission DynamoDB
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+}
+
+# Permission SQS
+resource "aws_iam_role_policy_attachment" "lambda_sqs" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+}
+
 
 
