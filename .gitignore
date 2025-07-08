@@ -8,6 +8,7 @@
 /frontend/.vite
 /backend/dist
 /backend/*.zip
+/infra/*.zip
 
 # Environment files
 **/*.env
