@@ -1,5 +1,6 @@
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
-const { DynamoDBClient, PutItemCommand } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBClient, PutItemCommand, GetItemCommand } = require("@aws-sdk/client-dynamodb");
+const { unmarshall } = require("@aws-sdk/util-dynamodb");
 const { v4: uuidv4 } = require("uuid");
 
 const REGION       = process.env.AWS_REGION;
@@ -55,5 +56,31 @@ async function createExtraction(req, res) {
   }
 }
 
-module.exports = { createExtraction };
+module.exports = { createExtraction, getExtractionStatus };
+
+async function getExtractionStatus(req, res) {
+  try {
+    const extractionId = req.params.id;
+    const userId = req.auth.sub;
+
+    const data = await ddb.send(new GetItemCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        user_id:       { S: userId },
+        extraction_id: { S: extractionId }
+      }
+    }));
+
+    if (!data.Item) {
+      return res.status(404).json({ error: "Extraction not found" });
+    }
+
+    const item = unmarshall(data.Item);
+    return res.json({ status: item.status });
+  } catch (err) {
+    console.error("Erreur getExtractionStatus:", err);
+    return res.status(500).json({ error: "Impossible de récupérer le statut" });
+  }
+}
+
 

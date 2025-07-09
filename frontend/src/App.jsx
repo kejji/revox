@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import SignUp from "./SignUp";
 import SignIn from "./SignIn";
+import ExtractionStatus from "./ExtractionStatus";
 import axios from "axios";
 import { jwtDecode } from "jwt-decode";
 import { Auth } from "aws-amplify";
@@ -15,6 +17,7 @@ export default function App() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [extractStatus, setExtractStatus] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (token) {
@@ -53,6 +56,7 @@ export default function App() {
         },
       );
       setExtractStatus(`ID extraction : ${res.data.extractionId}`);
+      navigate(`/extraction/${res.data.extractionId}`);
     } catch (err) {
       console.error('Erreur extraction:', err);
       setExtractStatus("Erreur lors du lancement de l'extraction");
@@ -78,7 +82,7 @@ export default function App() {
     );
   }
 
-  return (
+  const dashboard = (
     <div className="p-6">
       <h1 className="text-2xl font-bold">Revox Dashboard</h1>
 
@@ -139,5 +143,12 @@ export default function App() {
         Se déconnecter
       </button>
     </div>
+  );
+
+  return (
+    <Routes>
+      <Route path="/" element={dashboard} />
+      <Route path="/extraction/:id" element={<ExtractionStatus token={token} />} />
+    </Routes>
   );
 }
