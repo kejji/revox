@@ -11,7 +11,7 @@ const ddb = new DynamoDBClient({ region: REGION });
 
 async function createExtraction(req, res) {
   try {
-    const { appName, fromDate, toDate } = req.body;
+    const { appName, iosAppId, androidAppId, fromDate, toDate } = req.body;
     const userId      = req.auth.sub;           // récupéré par express-jwt
     const extractionId = uuidv4();
     const nowISO      = new Date().toISOString();
@@ -23,6 +23,8 @@ async function createExtraction(req, res) {
         user_id:       { S: userId },
         extraction_id: { S: extractionId },
         app_name:      { S: appName },
+        ios_app_id:    { S: iosAppId },
+        android_app_id:{ S: androidAppId },
         from_date:     { S: fromDate },
         to_date:       { S: toDate },
         status:        { S: "pending" },
@@ -34,7 +36,15 @@ async function createExtraction(req, res) {
     // 2. Publier le message dans SQS
     await sqs.send(new SendMessageCommand({
       QueueUrl:    QUEUE_URL,
-      MessageBody: JSON.stringify({ userId, extractionId })
+      MessageBody: JSON.stringify({
+        userId,
+        extractionId,
+        appName,
+        iosAppId,
+        androidAppId,
+        fromDate,
+        toDate
+      })
     }));
 
     // 3. Répondre immédiatement avec l’ID
