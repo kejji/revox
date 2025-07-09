@@ -23,10 +23,12 @@ export default function ExtractionStatus({ token }) {
   }, [id, token]);
 
   return (
-    <div className="p-6">
-      <h2 className="text-xl font-bold mb-4">Statut de l'extraction</h2>
-      <p className="mb-2">ID : {id}</p>
-      <p>Status : {status}</p>
+    <div className="container">
+      <div className="card">
+        <h2>Statut de l'extraction</h2>
+        <p>ID : {id}</p>
+        <p>Status : {status}</p>
+      </div>
     </div>
   );
 }

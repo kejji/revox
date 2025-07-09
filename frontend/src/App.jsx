@@ -83,66 +83,59 @@ export default function App() {
   }
 
   const dashboard = (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold">Revox Dashboard</h1>
-
-      {userInfo && (
-        <div className="my-4 p-4 bg-gray-100 rounded">
-          <p><strong>Email :</strong> {userInfo.email}</p>
-          <p><strong>ID utilisateur :</strong> {userInfo.sub}</p>
-        </div>
-      )}
-
-      <p>{message}</p>
-
-      <div className="mt-6 space-y-2">
-        <h2 className="text-lg font-semibold">Lancer une extraction</h2>
-        <input
-          className="w-full p-2 border border-gray-300 rounded"
-          placeholder="Nom de l'application"
-          value={appName}
-          onChange={(e) => setAppName(e.target.value)}
-        />
-        <input
-          className="w-full p-2 border border-gray-300 rounded"
-          placeholder="ID iOS"
-          value={iosAppId}
-          onChange={(e) => setIosAppId(e.target.value)}
-        />
-        <input
-          className="w-full p-2 border border-gray-300 rounded"
-          placeholder="ID Android"
-          value={androidAppId}
-          onChange={(e) => setAndroidAppId(e.target.value)}
-        />
-        <input
-          className="w-full p-2 border border-gray-300 rounded"
-          type="date"
-          value={fromDate}
-          onChange={(e) => setFromDate(e.target.value)}
-        />
-        <input
-          className="w-full p-2 border border-gray-300 rounded"
-          type="date"
-          value={toDate}
-          onChange={(e) => setToDate(e.target.value)}
-        />
-        <button
-          className="w-full bg-green-600 text-white p-2 rounded"
-          onClick={handleExtract}
-        >
-          Lancer l'extraction
+    <>
+      <header>
+        <h1>Revox Dashboard</h1>
+        <button className="btn btn-danger" onClick={handleLogout}>
+          Se déconnecter
         </button>
-        {extractStatus && <p className="text-sm">{extractStatus}</p>}
-      </div>
+      </header>
+      <div className="container">
+        {userInfo && (
+          <div className="card">
+            <p><strong>Email :</strong> {userInfo.email}</p>
+            <p><strong>ID utilisateur :</strong> {userInfo.sub}</p>
+          </div>
+        )}
 
-      <button
-        className="mt-6 px-4 py-2 bg-red-600 text-white rounded"
-        onClick={handleLogout}
-      >
-        Se déconnecter
-      </button>
-    </div>
+        <p>{message}</p>
+
+        <div className="card">
+          <h2>Lancer une extraction</h2>
+          <input
+            placeholder="Nom de l'application"
+            value={appName}
+            onChange={(e) => setAppName(e.target.value)}
+          />
+          <input
+            placeholder="ID iOS"
+            value={iosAppId}
+            onChange={(e) => setIosAppId(e.target.value)}
+          />
+          <input
+            placeholder="ID Android"
+            value={androidAppId}
+            onChange={(e) => setAndroidAppId(e.target.value)}
+          />
+          <div className="two-col">
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+            />
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+            />
+          </div>
+          <button className="btn btn-primary" onClick={handleExtract}>
+            Lancer l'extraction
+          </button>
+          {extractStatus && <p>{extractStatus}</p>}
+        </div>
+      </div>
+    </>
   );
 
   return (
