@@ -23,33 +23,30 @@ export default function SignIn({ onSuccess }) {
   };
 
   return (
-    <div className="p-4 bg-white rounded shadow max-w-md mx-auto my-6">
-      <h2 className="text-xl font-semibold mb-4">Sign In</h2>
+    <div className="container">
+      <div className="card">
+        <h2>Sign In</h2>
 
-      <input
-        className="w-full p-2 border border-gray-300 rounded mb-2"
-        placeholder="Email"
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
+        <input
+          placeholder="Email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
 
-      <input
-        className="w-full p-2 border border-gray-300 rounded mb-2"
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
 
-      {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+        {error && <p style={{ color: '#dc2626' }}>{error}</p>}
 
-      <button
-        className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
-        onClick={handleSignIn}
-      >
-        Sign In
-      </button>
+        <button className="btn btn-primary" onClick={handleSignIn}>
+          Sign In
+        </button>
+      </div>
     </div>
   );
 }

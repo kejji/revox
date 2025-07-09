@@ -36,63 +36,58 @@ export default function SignUp() {
 
   if (step === "signup") {
     return (
-      <div className="p-4 bg-white rounded shadow max-w-md mx-auto mt-6">
-        <h2 className="text-xl font-semibold mb-4">Create an account</h2>
+      <div className="container">
+        <div className="card">
+          <h2>Create an account</h2>
 
-        <input
-          className="w-full p-2 border border-gray-300 rounded mb-2"
-          placeholder="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+          <input
+            placeholder="Email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
 
-        <input
-          className="w-full p-2 border border-gray-300 rounded mb-2"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
 
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+          {error && <p style={{ color: "#dc2626" }}>{error}</p>}
 
-        <button
-          className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700"
-          onClick={handleSignUp}
-        >
-          Sign Up
-        </button>
+          <button className="btn btn-primary" onClick={handleSignUp}>
+            Sign Up
+          </button>
+        </div>
       </div>
     );
   }
 
   if (step === "confirm") {
     return (
-      <div className="p-4 bg-white rounded shadow max-w-md mx-auto mt-6">
-        <h2 className="text-xl font-semibold mb-4">Confirm your account</h2>
+      <div className="container">
+        <div className="card">
+          <h2>Confirm your account</h2>
 
-        <input
-          className="w-full p-2 border border-gray-300 rounded mb-2"
-          placeholder="Confirmation Code"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-        />
+          <input
+            placeholder="Confirmation Code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
 
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+          {error && <p style={{ color: "#dc2626" }}>{error}</p>}
 
-        <button
-          className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
-          onClick={handleConfirm}
-        >
-          Confirm
-        </button>
+          <button className="btn btn-primary" onClick={handleConfirm}>
+            Confirm
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <p className="text-center mt-6 text-green-700 font-semibold">
+    <p className="container" style={{ color: '#16a34a', textAlign: 'center' }}>
       ✅ Registration complete! You can now log in.
     </p>
   );

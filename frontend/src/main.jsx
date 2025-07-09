@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import Amplify from 'aws-amplify';
 import awsConfig from './aws-exports';
 import { Buffer } from 'buffer';
+import './index.css';
 
 window.Buffer = Buffer;
 Amplify.configure(awsConfig);
