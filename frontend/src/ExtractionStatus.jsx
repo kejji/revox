@@ -1,10 +1,22 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
+import { Auth } from "aws-amplify";
 import axios from "axios";
 
 export default function ExtractionStatus({ token }) {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [status, setStatus] = useState("pending");
+
+  const handleLogout = async () => {
+    try {
+      await Auth.signOut();
+    } catch (err) {
+      console.warn("SignOut failed", err);
+    }
+    localStorage.removeItem("token");
+    navigate("/");
+  };
 
   useEffect(() => {
     async function fetchStatus() {
@@ -23,12 +35,21 @@ export default function ExtractionStatus({ token }) {
   }, [id, token]);
 
   return (
-    <div className="container">
-      <div className="card">
-        <h2>Statut de l'extraction</h2>
-        <p>ID : {id}</p>
-        <p>Status : {status}</p>
+    <>
+      <header>
+        <button className="btn" onClick={() => navigate('/')}>⬅ Retour</button>
+        <h1>Revox Dashboard</h1>
+        <button className="btn btn-danger" onClick={handleLogout}>
+          Se déconnecter
+        </button>
+      </header>
+      <div className="container">
+        <div className="card">
+          <h2>Statut de l'extraction</h2>
+          <p>ID : {id}</p>
+          <p>Status : {status}</p>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
