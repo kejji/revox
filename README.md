@@ -58,6 +58,20 @@ VITE_COGNITO_APP_CLIENT_ID=<your_app_client_id> # terraform output cognito_app_c
 VITE_API_URL=<backend_api_url>                  # or terraform output http_api_endpoint
 ```
 
+### Extraction API
+
+Send a `POST` request to `/extract` with the following JSON body:
+
+```json
+{
+  "appName": "My App",
+  "iosAppId": "123456789",
+  "androidAppId": "com.example.app",
+  "fromDate": "2024-01-01",
+  "toDate": "2024-01-31"
+}
+```
+
 ---
 
 ## 🔐 Authentication
