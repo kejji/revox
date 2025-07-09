@@ -3,11 +3,18 @@ import SignUp from "./SignUp";
 import SignIn from "./SignIn";
 import axios from "axios";
 import { jwtDecode } from "jwt-decode";
+import { Auth } from "aws-amplify";
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
   const [message, setMessage] = useState("");
   const [userInfo, setUserInfo] = useState(null);
+  const [appName, setAppName] = useState("");
+  const [iosAppId, setIosAppId] = useState("");
+  const [androidAppId, setAndroidAppId] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [extractStatus, setExtractStatus] = useState("");
 
   useEffect(() => {
     if (token) {
@@ -28,6 +35,29 @@ export default function App() {
         });
     }
   }, [token]);
+
+  const handleExtract = async () => {
+    try {
+      const body = {
+        appName,
+        iosAppId,
+        androidAppId,
+        fromDate,
+        toDate,
+      };
+      const res = await axios.post(
+        `${import.meta.env.VITE_API_URL}/extract`,
+        body,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      setExtractStatus(`ID extraction : ${res.data.extractionId}`);
+    } catch (err) {
+      console.error('Erreur extraction:', err);
+      setExtractStatus("Erreur lors du lancement de l'extraction");
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -60,6 +90,47 @@ export default function App() {
       )}
 
       <p>{message}</p>
+
+      <div className="mt-6 space-y-2">
+        <h2 className="text-lg font-semibold">Lancer une extraction</h2>
+        <input
+          className="w-full p-2 border border-gray-300 rounded"
+          placeholder="Nom de l'application"
+          value={appName}
+          onChange={(e) => setAppName(e.target.value)}
+        />
+        <input
+          className="w-full p-2 border border-gray-300 rounded"
+          placeholder="ID iOS"
+          value={iosAppId}
+          onChange={(e) => setIosAppId(e.target.value)}
+        />
+        <input
+          className="w-full p-2 border border-gray-300 rounded"
+          placeholder="ID Android"
+          value={androidAppId}
+          onChange={(e) => setAndroidAppId(e.target.value)}
+        />
+        <input
+          className="w-full p-2 border border-gray-300 rounded"
+          type="date"
+          value={fromDate}
+          onChange={(e) => setFromDate(e.target.value)}
+        />
+        <input
+          className="w-full p-2 border border-gray-300 rounded"
+          type="date"
+          value={toDate}
+          onChange={(e) => setToDate(e.target.value)}
+        />
+        <button
+          className="w-full bg-green-600 text-white p-2 rounded"
+          onClick={handleExtract}
+        >
+          Lancer l'extraction
+        </button>
+        {extractStatus && <p className="text-sm">{extractStatus}</p>}
+      </div>
 
       <button
         className="mt-6 px-4 py-2 bg-red-600 text-white rounded"
