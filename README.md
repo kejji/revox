@@ -19,7 +19,7 @@ cd infra
 terraform init
 terraform apply
 ```
-➡️ Copy the `cognito_user_pool_id` and `cognito_app_client_id` values shown after apply.
+➡️ Copy the `cognito_user_pool_id`, `cognito_app_client_id`, `extraction_queue_url`, and `results_bucket` values shown after apply.
 
 ---
 
@@ -38,6 +38,7 @@ COGNITO_USER_POOL_ID=<your_user_pool_id>        # terraform output cognito_user_
 COGNITO_APP_CLIENT_ID=<your_app_client_id>      # terraform output cognito_app_client_id
 EXTRACTION_QUEUE_URL=<sqs_url>                  # terraform output extraction_queue_url
 EXTRACTIONS_TABLE=revox_extractions             # DynamoDB table name
+RESULTS_BUCKET=<s3_bucket>                      # S3 bucket for CSV files
 LOCAL=true                                      # start local Express server
 ```
 

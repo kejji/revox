@@ -131,6 +131,19 @@ resource "aws_sqs_queue" "extraction_queue" {
   message_retention_seconds  = 86400  # conserve 24 h
 }
 
+########################################
+# S3 : stockage des fichiers CSV
+########################################
+resource "aws_s3_bucket" "results" {
+  bucket = "revox-results"
+  force_destroy = true
+}
+
+output "results_bucket" {
+  description = "Bucket S3 stockant les fichiers CSV"
+  value       = aws_s3_bucket.results.bucket
+}
+
 # Output de l’URL pour pouvoir la consommer côté backend
 output "extraction_queue_url" {
   description = "URL de la queue SQS pour les extractions"
@@ -255,16 +268,45 @@ resource "aws_lambda_function" "api" {
     variables = {
       EXTRACTIONS_TABLE    = aws_dynamodb_table.extractions.name
       EXTRACTION_QUEUE_URL = aws_sqs_queue.extraction_queue.url
+      RESULTS_BUCKET       = aws_s3_bucket.results.bucket
     }
   }
-  # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
   lifecycle {
-    # Ignore tout changement de code : c'est GitHub Actions qui push réellement
     ignore_changes = [
       filename,
       source_code_hash,
     ]
   }
+}
+
+########################################
+# Lambda consommatrice de la queue SQS
+########################################
+resource "aws_lambda_function" "extraction_worker" {
+  function_name    = "revox-extraction-worker"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "extractWorker.handler"
+  runtime          = "nodejs18.x"
+  filename         = "${path.module}/dummy.zip"
+  source_code_hash = filebase64sha256("${path.module}/dummy.zip")
+  environment {
+    variables = {
+      EXTRACTIONS_TABLE = aws_dynamodb_table.extractions.name
+      RESULTS_BUCKET    = aws_s3_bucket.results.bucket
+    }
+  }
+  lifecycle {
+    ignore_changes = [
+      filename,
+      source_code_hash,
+    ]
+  }
+}
+
+resource "aws_lambda_event_source_mapping" "queue_to_worker" {
+  event_source_arn = aws_sqs_queue.extraction_queue.arn
+  function_name    = aws_lambda_function.extraction_worker.arn
+  batch_size       = 1
 }
 
 ########################################
@@ -324,6 +366,12 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
 resource "aws_iam_role_policy_attachment" "lambda_sqs" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+}
+
+# Permission S3
+resource "aws_iam_role_policy_attachment" "lambda_s3" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
 
