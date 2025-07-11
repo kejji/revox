@@ -18,7 +18,6 @@ export default function SignIn({ onSuccess }) {
       setError(null);
     } catch (err) {
       console.error("SignIn error:", err);
-      console.log("User Pool ID:", import.meta.env.VITE_COGNITO_USER_POOL_ID);
       setError("Incorrect email or password");
     }
   };

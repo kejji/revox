@@ -84,7 +84,7 @@ export default function App() {
 
   const dashboard = (
     <div className="p-6">
-      <h1 className="text-2xl font-bold">Revox v2</h1>
+      <h1 className="text-2xl font-bold">Revox Dashboard</h1>
 
       {userInfo && (
         <div className="my-4 p-4 bg-gray-100 rounded">
