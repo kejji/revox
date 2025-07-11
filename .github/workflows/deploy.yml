@@ -45,6 +45,10 @@ jobs:
           npm install --legacy-peer-deps
           npm run build
         working-directory: frontend
+        env:
+          VITE_COGNITO_USER_POOL_ID: ${{ secrets.VITE_COGNITO_USER_POOL_ID }}
+          VITE_COGNITO_APP_CLIENT_ID: ${{ secrets.VITE_COGNITO_APP_CLIENT_ID }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
       - name: Deploy frontend to S3
         run: |
