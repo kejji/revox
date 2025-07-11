@@ -39,3 +39,14 @@ jobs:
             --function-name revox-backend \
             --zip-file fileb://revox-backend.zip \
             --region eu-west-3
+
+      - name: Build frontend
+        run: |
+          npm install
+          npm run build
+        working-directory: frontend
+
+      - name: Deploy frontend to S3
+        run: |
+          aws s3 sync ./dist s3://revox-frontend --region eu-west-3 --delete
+        working-directory: frontend
