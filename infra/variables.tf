@@ -11,5 +11,5 @@ variable "aws_region" {
 variable "aws_profile" {
   description = "Profile AWS CLI à utiliser"
   type        = string
-  default     = "revox-dev"
+  default     = "revox-admin"
 }
