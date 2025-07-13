@@ -122,6 +122,10 @@ resource "aws_dynamodb_table" "extractions" {
   # seront stockés automatiquement.
 }
 
+output "extractions_table_name" {
+  value = aws_dynamodb_table.extractions.name
+}
+
 ########################################
 # SQS : file pour orchestrer les extractions
 ########################################
