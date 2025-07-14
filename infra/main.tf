@@ -255,6 +255,7 @@ resource "aws_lambda_function" "api" {
   runtime          = "nodejs18.x"
   filename         = "${path.module}/dummy.zip"
   source_code_hash = filebase64sha256("${path.module}/dummy.zip")
+  kms_key_arn = aws_kms_key.lambda_env.arn
   environment {
     variables = {
       EXTRACTIONS_TABLE    = aws_dynamodb_table.extractions.name
@@ -270,6 +271,16 @@ resource "aws_lambda_function" "api" {
     ]
   }
 }
+
+########################################
+# CloudWatch Log Group pour les logs Lambda
+########################################
+resource "aws_cloudwatch_log_group" "lambda_log_group" {
+  name              = "/aws/lambda/${aws_lambda_function.api.function_name}"
+  retention_in_days = 14
+}
+
+
 
 ########################################
 # CloudWatch Log Group pour les logs d’API Gateway
@@ -329,6 +340,47 @@ resource "aws_iam_role_policy_attachment" "lambda_sqs" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
 }
+
+# Clé KMS pour chiffrer les variables d'environnement Lambda
+resource "aws_kms_key" "lambda_env" {
+  description             = "Clé KMS pour les variables d’environnement Lambda"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
+# Policy KMS autorisant le rôle Lambda à déchiffrer les variables
+resource "aws_kms_key_policy" "lambda_env_policy" {
+  key_id = aws_kms_key.lambda_env.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid: "Allow Lambda Execution Role to decrypt",
+        Effect: "Allow",
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/revox-backend-exec-role"
+        },
+        Action = [
+          "kms:Decrypt",
+          "kms:Encrypt",
+          "kms:GenerateDataKey*"
+        ],
+        Resource = "*"
+      },
+      {
+        Sid: "EnableIAMUserPermissions",
+        Effect: "Allow",
+        Principal: {
+          AWS: "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        },
+        Action: "kms:*",
+        Resource: "*"
+      }
+    ]
+  })
+}
+
 
 
 
