@@ -53,9 +53,9 @@ npm run dev
 
 #### `.env` file (from `.env.example`)
 ```
-VITE_COGNITO_USER_POOL_ID=<your_user_pool_id>   # terraform output cognito_user_pool_id
-VITE_COGNITO_APP_CLIENT_ID=<your_app_client_id> # terraform output cognito_app_client_id
-VITE_API_URL=<backend_api_url>                  # or terraform output http_api_endpoint
+COGNITO_USER_POOL_ID=<your_user_pool_id>   # terraform output cognito_user_pool_id
+COGNITO_APP_CLIENT_ID=<your_app_client_id> # terraform output cognito_app_client_id
+API_URL=<backend_api_url>                  # or terraform output http_api_endpoint
 ```
 
 ### Extraction API
