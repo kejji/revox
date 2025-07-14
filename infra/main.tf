@@ -36,15 +36,6 @@ resource "aws_cognito_user_pool_client" "revox_app_client" {
   logout_urls   = ["http://localhost:3000/"]
 }
 
-# 3. Outputs pour Cognito
-output "cognito_user_pool_id" {
-  value = aws_cognito_user_pool.revox_user_pool.id
-}
-
-output "cognito_app_client_id" {
-  value = aws_cognito_user_pool_client.revox_app_client.id
-}
-
 ########################################
 # Athorizer Cognito
 ########################################
@@ -122,10 +113,6 @@ resource "aws_dynamodb_table" "extractions" {
   # seront stockés automatiquement.
 }
 
-output "extractions_table_name" {
-  value = aws_dynamodb_table.extractions.name
-}
-
 ########################################
 # SQS : file pour orchestrer les extractions
 ########################################
@@ -133,18 +120,6 @@ resource "aws_sqs_queue" "extraction_queue" {
   name = "revox-extraction-queue"
   visibility_timeout_seconds = 300    # 5 min pour traiter chaque message
   message_retention_seconds  = 86400  # conserve 24 h
-}
-
-# Output de l’URL pour pouvoir la consommer côté backend
-output "extraction_queue_url" {
-  description = "URL de la queue SQS pour les extractions"
-  value = aws_sqs_queue.extraction_queue.url
-}
-
-# Output de l’ARN si jamais utile
-output "extraction_queue_arn" {
-  description = "ARN de la queue SQS pour les extractions"
-  value       = aws_sqs_queue.extraction_queue.arn
 }
 
 ########################################
@@ -225,23 +200,12 @@ resource "aws_lambda_permission" "allow_apigw" {
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
 
-# 6. Permission pour que API GW puisse invoquer Lambda
-output "http_api_endpoint" {
-  description = "URL publique de l’HTTP API (stage $default)"
-  value       = aws_apigatewayv2_api.http_api.api_endpoint
-}
-
 ########################################
 # Function URL pour invoquer directement Lambda 
 ########################################
 resource "aws_lambda_function_url" "api_url" {
   function_name      = aws_lambda_function.api.function_name
   authorization_type = "NONE"
-}
-
-output "function_url" {
-  description = "URL directe de la Lambda pour debug"
-  value       = aws_lambda_function_url.api_url.function_url
 }
 
 
