@@ -7,9 +7,9 @@ API_URL=$(terraform output -raw http_api_endpoint)
 
 cat <<EOF > ../frontend/.env
 AWS_REGION=$AWS_REGION
-COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID
-COGNITO_APP_CLIENT_ID=$COGNITO_APP_CLIENT_ID
-API_URL=$API_URL
+VITE_COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID
+VITE_COGNITO_APP_CLIENT_ID=$COGNITO_APP_CLIENT_ID
+VITE_API_URL=$API_URL
 EOF
 
 echo "✓ .env frontend generated in ../frontend/.env"
@@ -24,6 +24,6 @@ EOF
 
 echo "✓ .env backend generated in ../backend/.env"
 
-gh secret set COGNITO_USER_POOL_ID -b"$COGNITO_USER_POOL_ID" --repo "$REPO"
-gh secret set COGNITO_APP_CLIENT_ID -b"$COGNITO_APP_CLIENT_ID" --repo "$REPO"
-gh secret set API_URL -b"$API_URL" --repo "$REPO"
+gh secret set VITE_COGNITO_USER_POOL_ID -b"$COGNITO_USER_POOL_ID" --repo "$REPO"
+gh secret set VITE_COGNITO_APP_CLIENT_ID -b"$COGNITO_APP_CLIENT_ID" --repo "$REPO"
+gh secret set VITE_API_URL -b"$API_URL" --repo "$REPO"
