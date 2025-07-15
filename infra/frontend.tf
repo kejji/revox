@@ -52,5 +52,7 @@ resource "aws_s3_bucket_policy" "frontend_public" {
       Resource  = "${aws_s3_bucket.frontend.arn}/*"
     }]
   })
+
+  depends_on = [aws_s3_bucket_public_access_block.frontend]
 }
 
