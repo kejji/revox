@@ -40,6 +40,11 @@ jobs:
             --function-name revox-backend \
             --zip-file fileb://revox-backend.zip \
             --region eu-west-3
+            
+          aws lambda update-function-code \
+            --function-name revox-worker \
+            --zip-file fileb://revox-backend.zip \
+            --region eu-west-3
 
       - name: Build frontend
         run: |
