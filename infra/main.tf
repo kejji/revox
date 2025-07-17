@@ -274,6 +274,36 @@ resource "aws_lambda_function" "api" {
 }
 
 ########################################
+#  Ressource gérant la lambda worker
+########################################
+resource "aws_lambda_function" "worker" {
+  function_name = "revox-worker"
+  role          = aws_iam_role.lambda_exec.arn
+  handler       = "worker.handler"
+  runtime       = "nodejs18.x"
+  filename      = "${path.module}/dummy.zip" # remplace plus tard par un vrai zip
+  source_code_hash = filebase64sha256("${path.module}/dummy.zip")
+
+  environment {
+    variables = {
+      EXTRACTIONS_TABLE = aws_dynamodb_table.extractions.name
+      S3_BUCKET         = "revox-csv" # ou ton bucket réel
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [ filename, source_code_hash ]
+  }
+}
+
+# Liaison SQS -> Lambda worker
+resource "aws_lambda_event_source_mapping" "worker_sqs" {
+  event_source_arn  = aws_sqs_queue.extraction_queue.arn
+  function_name     = aws_lambda_function.worker.arn
+  batch_size        = 1
+}
+
+########################################
 # CloudWatch Log Group pour les logs Lambda
 ########################################
 resource "aws_cloudwatch_log_group" "lambda_log_group" {
@@ -340,6 +370,12 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
 resource "aws_iam_role_policy_attachment" "lambda_sqs" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+}
+
+# Permission S3
+resource "aws_iam_role_policy_attachment" "lambda_s3" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
 # Clé KMS pour chiffrer les variables d'environnement Lambda
