@@ -16,9 +16,6 @@ async function createExtraction(req, res) {
     const userId      = req.auth.sub;           // récupéré par express-jwt
     const extractionId = uuidv4();
     const nowISO      = new Date().toISOString();
-    console.log("📥 Corps reçu:", req.body);
-    console.log("🔐 Utilisateur:", userId);
-    console.log("📤 Envoi dans SQS:", QUEUE_URL);
 
     // 1. Écrire l’item "pending" dans DynamoDB
     await ddb.send(new PutItemCommand({

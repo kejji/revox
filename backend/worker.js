@@ -4,7 +4,7 @@ import { DynamoDBClient, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
 const s3 = new S3Client({ region: "eu-west-3" });
 const db = new DynamoDBClient({ region: "eu-west-3" });
 
-export const handler = async (event) => {
+exports.handler = async (event) => {
   for (const record of event.Records) {
     try {
       const message = JSON.parse(record.body);

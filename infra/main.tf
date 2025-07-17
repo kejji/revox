@@ -311,8 +311,6 @@ resource "aws_cloudwatch_log_group" "lambda_log_group" {
   retention_in_days = 14
 }
 
-
-
 ########################################
 # CloudWatch Log Group pour les logs d’API Gateway
 ########################################
