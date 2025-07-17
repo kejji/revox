@@ -1,7 +1,7 @@
 require("dotenv").config();
 
 const AWS_REGION        = process.env.AWS_REGION;
-const QUEUE_URL         = process.env.EXTRACTION_QUEUE_URL;
+//const QUEUE_URL         = process.env.SQS_QUEUE_URL;
 const EXTRACTIONS_TABLE = process.env.EXTRACTIONS_TABLE;
 
 const express = require("express");

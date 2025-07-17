@@ -4,7 +4,7 @@ const { unmarshall } = require("@aws-sdk/util-dynamodb");
 const { v4: uuidv4 } = require("uuid");
 
 const REGION       = process.env.AWS_REGION;
-const QUEUE_URL    = process.env.EXTRACTION_QUEUE_URL;
+const QUEUE_URL    = process.env.SQS_QUEUE_URL;
 const TABLE_NAME   = process.env.EXTRACTIONS_TABLE;
 
 const sqs = new SQSClient({ region: REGION });
