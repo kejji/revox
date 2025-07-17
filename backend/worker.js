@@ -1,6 +1,5 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { DynamoDBClient, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
-
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
 const s3 = new S3Client({ region: "eu-west-3" });
 const db = new DynamoDBClient({ region: "eu-west-3" });
 
