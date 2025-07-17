@@ -287,7 +287,7 @@ resource "aws_lambda_function" "worker" {
   environment {
     variables = {
       EXTRACTIONS_TABLE = aws_dynamodb_table.extractions.name
-      S3_BUCKET         = "revox-csv" # ou ton bucket réel
+      S3_BUCKET = aws_s3_bucket.csv_bucket.bucket    
     }
   }
 
@@ -305,6 +305,18 @@ resource "aws_lambda_event_source_mapping" "worker_sqs" {
   function_name     = aws_lambda_function.worker.arn
   batch_size        = 1
 }
+
+#######################################
+# Bucket S3 for csv extractions
+########################################
+resource "aws_s3_bucket" "csv_bucket" {
+  bucket = "revox-csv"
+
+  tags = {
+    Name = "Bucket CSV pour Revox"
+  }
+}
+
 
 ########################################
 # CloudWatch Log Group pour les logs Lambda
