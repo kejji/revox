@@ -1,4 +1,4 @@
-(async () => {
+
 
 const { default: gplay } = await import('google-play-scraper');
 const { default: store } = await import('app-store-scraper');
@@ -453,4 +453,6 @@ async function generateAnalysisReport(app) {
     }
 }
 
-})();
+module.exports = {
+  processApp
+};
