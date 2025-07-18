@@ -23,7 +23,7 @@ exports.handler = async (event) => {
       console.log("🛠️ Traitement extraction", extractionId);
 
       // Étape 1 : générer le contenu CSV
-      const content = await processApp(appName, iosAppId, androidAppId,fromDate,toDate);
+      const content = await processApp(store, gplay, appName, iosAppId, androidAppId,fromDate,toDate);
 
       // Étape 2 : envoyer vers S3
       const s3Key = `${appName}/${userId}/${extractionId}.csv`;
@@ -120,7 +120,7 @@ function getBundleId(appId) {
 
 
 // Fonction pour récupérer les avis iOS
-async function getIOSReviews(appName, appId, startDate, endDate) {
+async function getIOSReviews(store,appName, appId, startDate, endDate) {
   try {
     if (!appId || appId === 'N/A') {
       console.log(`Pas d'App ID iOS pour ${appName}, ignoré.`);
@@ -196,7 +196,7 @@ async function getIOSReviews(appName, appId, startDate, endDate) {
 }
 
 // Fonction pour récupérer les avis Android
-async function getAndroidReviews(appName, bundleId, startDate, endDate) {
+async function getAndroidReviews(gplay, appName, bundleId, startDate, endDate) {
   try {
     if (!bundleId || bundleId === 'N/A') {
       console.log(`Pas de bundle ID Android pour ${appName}, ignoré.`);
@@ -286,15 +286,15 @@ async function getAndroidReviews(appName, bundleId, startDate, endDate) {
 }
 
 // Fonction pour traiter une application
-async function processApp(appName, iosAppId, androidBundleId, startDate, endDate) {
+async function processApp(store, gplay, appName, iosAppId, androidBundleId, startDate, endDate) {
   try {
     console.log(`\nTraitement de ${appName}`);
     console.log(`Période d'extraction : du ${startDate} au ${endDate}`);
 
     // Récupérer les nouveaux avis
     const [iosReviews, androidReviews] = await Promise.all([
-      getIOSReviews(appName, iosAppId, startDate, endDate),
-      getAndroidReviews(appName, androidBundleId, startDate, endDate)
+      getIOSReviews(store,appName, iosAppId, startDate, endDate),
+      getAndroidReviews(gplay, appName, androidBundleId, startDate, endDate)
     ]);
 
     // Concaténer tous les avis, sans se soucier des doublons
