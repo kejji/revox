@@ -24,7 +24,9 @@
     "jwks-rsa": "^3.2.0",
     "pg": "^8.16.2",
     "uuid": "^11.1.0",
-    "google-play-scraper": "^9.0.2",
-    "app-store-scraper": "^0.14.1"
+    "google-play-scraper": "^10.0.1",
+    "app-store-scraper": "^0.18.0",
+    "csv-parser": "^3.2.0",
+    "json2csv": "^6.0.0-alpha.2"
   }
 }
