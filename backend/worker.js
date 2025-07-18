@@ -1,17 +1,17 @@
-(async () => {
-
+// 1. Imports synchrones en CommonJS
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
+const { Parser } = require("json2csv");
+const https = require("https");
+
+// 2. Instanciation des clients AWS
 const s3 = new S3Client({ region: "eu-west-3" });
 const db = new DynamoDBClient({ region: "eu-west-3" });
-const { Parser } = require('json2csv');
-const https = require('https');
-const csv = require('csv-parser');
 
 exports.handler = async (event) => {
-  const { default: gplay } = await import('google-play-scraper');
-  const { default: store } = await import('app-store-scraper');
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  const gplay = require("google-play-scraper");
+  const store = require("app-store-scraper");
+
   for (const record of event.Records) {
     let message = null;
 
@@ -322,8 +322,7 @@ async function processApp(appName, iosAppId, androidBundleId, startDate, endDate
       ];
 
       const json2csvParser = new Parser({ fields });
-      const csv = json2csvParser.parse(allReviews);
-      return csv;
+      return json2csvParser.parse(allReviews);
     }
     return 0;
   } catch (error) {
@@ -332,4 +331,3 @@ async function processApp(appName, iosAppId, androidBundleId, startDate, endDate
   }
 }
 
-})();
