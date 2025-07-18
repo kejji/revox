@@ -281,6 +281,7 @@ resource "aws_lambda_function" "worker" {
   role          = aws_iam_role.lambda_exec.arn
   handler       = "worker.handler"
   runtime       = "nodejs18.x"
+  timeout       = 300
   filename      = "${path.module}/dummy.zip" # remplace plus tard par un vrai zip
   source_code_hash = filebase64sha256("${path.module}/dummy.zip")
 
