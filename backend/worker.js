@@ -1,6 +1,6 @@
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
-
+const scrape = require("./scrape");
 const s3 = new S3Client({ region: "eu-west-3" });
 const db = new DynamoDBClient({ region: "eu-west-3" });
 
@@ -10,15 +10,15 @@ exports.handler = async (event) => {
 
     try {
       message = JSON.parse(record.body);
-      const { userId, extractionId, appName, fromDate, toDate } = message;
+      const { userId, extractionId, appName, iosAppId, androidAppId, fromDate, toDate } = message;
 
       console.log("🛠️ Traitement extraction", extractionId);
 
-      // Étape 1 : générer le contenu CSV fictif
-      const content = `app_name,from,to,data\n${appName},${fromDate},${toDate},123`;
+      // Étape 1 : générer le contenu CSV
+      const content = await scrape.processApp(appName, iosAppId, androidAppId,fromDate,toDate);
 
       // Étape 2 : envoyer vers S3
-      const s3Key = `csv/${userId}/${extractionId}.csv`;
+      const s3Key = `${appName}/${userId}/${extractionId}.csv`;
 
       await s3.send(new PutObjectCommand({
         Bucket: process.env.S3_BUCKET, // Utilise la var env définie dans Terraform
