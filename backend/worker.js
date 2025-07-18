@@ -4,14 +4,14 @@ const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
 const s3 = new S3Client({ region: "eu-west-3" });
 const db = new DynamoDBClient({ region: "eu-west-3" });
-const { default: gplay } = await import('google-play-scraper');
-const { default: store } = await import('app-store-scraper');
-const { default: Anthropic } = await import('@anthropic-ai/sdk');
 const { Parser } = require('json2csv');
 const https = require('https');
 const csv = require('csv-parser');
 
 exports.handler = async (event) => {
+  const { default: gplay } = await import('google-play-scraper');
+  const { default: store } = await import('app-store-scraper');
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
   for (const record of event.Records) {
     let message = null;
 
