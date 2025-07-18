@@ -9,8 +9,9 @@ const s3 = new S3Client({ region: "eu-west-3" });
 const db = new DynamoDBClient({ region: "eu-west-3" });
 
 exports.handler = async (event) => {
-  const gplay = require("google-play-scraper");
-  const store = require("app-store-scraper");
+  // Import dynamiques des ESM
+  const { default: gplay } = await import("google-play-scraper");
+  const { default: store } = await import("app-store-scraper");
 
   for (const record of event.Records) {
     let message = null;
