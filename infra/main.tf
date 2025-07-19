@@ -261,6 +261,7 @@ resource "aws_lambda_function" "api" {
     variables = {
       EXTRACTIONS_TABLE    = aws_dynamodb_table.extractions.name
       EXTRACTION_QUEUE_URL = aws_sqs_queue.extraction_queue.url
+      S3_BUCKET = aws_s3_bucket.csv_bucket.bucket
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
