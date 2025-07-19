@@ -1,5 +1,8 @@
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
 const { DynamoDBClient, PutItemCommand, GetItemCommand } = require("@aws-sdk/client-dynamodb");
+const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+
 const { unmarshall } = require("@aws-sdk/util-dynamodb");
 const { v4: uuidv4 } = require("uuid");
 
@@ -9,6 +12,7 @@ const TABLE_NAME   = process.env.EXTRACTIONS_TABLE;
 
 const sqs = new SQSClient({ region: REGION });
 const ddb = new DynamoDBClient({ region: REGION });
+const s3 = new S3Client({ region: REGION });
 
 async function createExtraction(req, res) {
   try {
@@ -56,8 +60,6 @@ async function createExtraction(req, res) {
   }
 }
 
-module.exports = { createExtraction, getExtractionStatus };
-
 async function getExtractionStatus(req, res) {
   try {
     const extractionId = req.params.id;
@@ -82,5 +84,56 @@ async function getExtractionStatus(req, res) {
     return res.status(500).json({ error: "Impossible de récupérer le statut" });
   }
 }
+
+async function downloadExtraction(req, res) {
+  try {
+    const extractionId = req.params.id;
+    const userId = req.auth.sub;
+
+    // Vérifier que l’extraction existe
+    const data = await ddb.send(new GetItemCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        user_id:       { S: userId },
+        extraction_id: { S: extractionId }
+      }
+    }));
+
+    if (!data.Item) {
+      return res.status(404).json({ error: "Extraction not found" });
+    }
+
+    const item = unmarshall(data.Item);
+
+    // Gérer le cas d'erreur
+    if (item.status === "error") {
+      return res.status(500).json({ error: "Extraction failed" });
+    }
+
+    // Seul le statut "done" permet le téléchargement
+    if (item.status !== "done") {
+      return res.status(400).json({ error: "Extraction not completed yet" });
+    }
+
+    if (!item.s3_key) {
+      return res.status(500).json({ error: "No S3 key available" });
+    }
+
+    // Générer l’URL signée
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: item.s3_key
+    });
+
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1h
+    return res.json({ url: signedUrl });
+
+  } catch (err) {
+    console.error("Erreur downloadExtraction:", err);
+    return res.status(500).json({ error: "Impossible de générer le lien de téléchargement" });
+  }
+}
+
+module.exports = { createExtraction, getExtractionStatus, downloadExtraction };
 
 

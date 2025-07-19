@@ -11,7 +11,7 @@ const cors    = require("cors");
 const decodeJwtSub = require("./auth");
 
 // Import de la logique d’extraction
-const { createExtraction, getExtractionStatus } = require("./extract");
+const { createExtraction, getExtractionStatus, downloadExtraction } = require("./extract");
 
 const app = express();
 app.use(cors());
@@ -43,6 +43,13 @@ app.get("/extract/:id", (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   getExtractionStatus(req, res);
+});
+
+app.get("/extract/:id/download", (req, res) => {
+  if (!req.auth?.sub) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  downloadExtraction(req, res);
 });
 
 // Pour le dev local uniquement
