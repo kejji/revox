@@ -11,7 +11,7 @@ const cors    = require("cors");
 const decodeJwtSub = require("./auth");
 
 // Import de la logique d’extraction
-const { createExtraction, getExtractionStatus } = require("./routes/extract");
+const { createExtraction, getExtractionStatus } = require("./extract");
 
 const app = express();
 app.use(cors());
