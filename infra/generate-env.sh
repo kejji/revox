@@ -20,6 +20,7 @@ COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID
 COGNITO_APP_CLIENT_ID=$COGNITO_APP_CLIENT_ID
 EXTRACTION_QUEUE_URL=$(terraform output -raw extraction_queue_url)
 DYNAMODB_TABLE_NAME=$(terraform output -raw extractions_table_name)
+S3_BUCKET=$(terraform output -raw s3_bucket)
 EOF
 
 echo "✓ .env backend generated in ../backend/.env"

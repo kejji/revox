@@ -29,3 +29,8 @@ output "function_url" {
   description = "URL directe de la Lambda pour debug"
   value       = trimspace(aws_lambda_function_url.api_url.function_url)
 }
+
+output "s3_bucket" {
+  description = "Bucket S3 contenant les extractions"
+  value       = trimspace(aws_s3_bucket.csv_bucket.bucket )
+}
