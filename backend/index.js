@@ -1,7 +1,6 @@
 require("dotenv").config();
 
 const AWS_REGION        = process.env.AWS_REGION;
-//const QUEUE_URL         = process.env.SQS_QUEUE_URL;
 const EXTRACTIONS_TABLE = process.env.EXTRACTIONS_TABLE;
 
 const express = require("express");
@@ -12,6 +11,7 @@ const decodeJwtSub = require("./auth");
 
 // Import de la logique d’extraction
 const { createExtraction, getExtractionStatus, downloadExtraction } = require("./extract");
+const { searchApp } = require("./searchApp");
 
 const app = express();
 app.use(cors());
@@ -45,11 +45,17 @@ app.get("/extract/:id", (req, res) => {
   getExtractionStatus(req, res);
 });
 
+// Télécharger le fichier
 app.get("/extract/:id/download", (req, res) => {
   if (!req.auth?.sub) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   downloadExtraction(req, res);
+});
+
+// Rechercher une app
+app.get("/search-app", (req, res) => {
+  searchApp(req, res);
 });
 
 // Pour le dev local uniquement

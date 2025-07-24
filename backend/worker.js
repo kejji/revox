@@ -29,7 +29,7 @@ exports.handler = async (event) => {
       const s3Key = `${appName}/${userId}/${extractionId}.csv`;
 
       await s3.send(new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET, // Utilise la var env définie dans Terraform
+        Bucket: process.env.S3_BUCKET,
         Key: s3Key,
         Body: content,
         ContentType: "text/csv",
