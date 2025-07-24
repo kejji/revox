@@ -1,4 +1,3 @@
-// routes/searchApp.js
 const https = require("https");
 
 exports.searchApp = async (req, res) => {
@@ -8,6 +7,9 @@ exports.searchApp = async (req, res) => {
   }
 
   try {
+    // Importer dynamiquement les modules ESM
+    const { default: gplay } = await import("google-play-scraper");
+
     // Recherche iOS via l’API iTunes
     const iosPromise = new Promise((resolve, reject) => {
       https.get(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=software&country=FR&limit=5`, resp => {
@@ -31,9 +33,8 @@ exports.searchApp = async (req, res) => {
       }).on("error", err => reject(err));
     });
 
-    // Recherche Android via API tiers (npm module)
-    const { search: gplaySearch } = await import("google-play-scraper");
-    const androidResults = await gplaySearch({ term: query, num: 5, country: "fr" });
+    // Recherche Android via gplay
+    const androidResults = await gplay.search({ term: query, num: 5, country: "fr" });
 
     const androidApps = androidResults.map(app => ({
       store: "android",

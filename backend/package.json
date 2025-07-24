@@ -11,22 +11,24 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.840.0",
+    "@aws-sdk/client-dynamodb": "^3.848.0",
+    "@aws-sdk/client-s3": "^3.850.0",
     "@aws-sdk/client-sqs": "^3.840.0",
+    "@aws-sdk/s3-request-presigner": "^3.850.0",
     "@aws-sdk/util-dynamodb": "^3.840.0",
     "@vendia/serverless-express": "^4.12.6",
+    "app-store-scraper": "^0.18.0",
     "aws-serverless-express": "^3.4.0",
     "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "express-jwt": "^8.5.1",
+    "google-play-scraper": "^10.0.1",
+    "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
     "pg": "^8.16.2",
-    "uuid": "^11.1.0",
-    "google-play-scraper": "^10.0.1",
-    "app-store-scraper": "^0.18.0",
-    "csv-parser": "^3.2.0",
-    "json2csv": "^6.0.0-alpha.2"
+    "uuid": "^11.1.0"
   }
 }
