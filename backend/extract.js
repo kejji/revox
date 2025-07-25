@@ -1,10 +1,9 @@
-const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
-const { DynamoDBClient, PutItemCommand, GetItemCommand } = require("@aws-sdk/client-dynamodb");
-const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
-const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-
-const { unmarshall } = require("@aws-sdk/util-dynamodb");
-const { v4: uuidv4 } = require("uuid");
+import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+import { DynamoDBClient, PutItemCommand, GetItemCommand } from "@aws-sdk/client-dynamodb";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { unmarshall } from "@aws-sdk/util-dynamodb";
+import { v4 as uuidv4 } from "uuid";
 
 const REGION       = process.env.AWS_REGION;
 const QUEUE_URL    = process.env.EXTRACTION_QUEUE_URL;
@@ -15,7 +14,7 @@ const sqs = new SQSClient({ region: REGION });
 const ddb = new DynamoDBClient({ region: REGION });
 const s3 = new S3Client({ region: REGION });
 
-async function createExtraction(req, res) {
+export async function createExtraction(req, res) {
   try {
     const { appName, iosAppId, androidAppId, fromDate, toDate } = req.body;
     const userId      = req.auth.sub;           // récupéré par express-jwt
@@ -61,7 +60,7 @@ async function createExtraction(req, res) {
   }
 }
 
-async function getExtractionStatus(req, res) {
+export async function getExtractionStatus(req, res) {
   try {
     const extractionId = req.params.id;
     const userId = req.auth.sub;
@@ -86,7 +85,7 @@ async function getExtractionStatus(req, res) {
   }
 }
 
-async function downloadExtraction(req, res) {
+export async function downloadExtraction(req, res) {
   try {
     const extractionId = req.params.id;
     const userId = req.auth.sub;
@@ -134,7 +133,5 @@ async function downloadExtraction(req, res) {
     return res.status(500).json({ error: "Impossible de générer le lien de téléchargement" });
   }
 }
-
-module.exports = { createExtraction, getExtractionStatus, downloadExtraction };
 
 

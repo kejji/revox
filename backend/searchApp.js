@@ -1,6 +1,6 @@
-const https = require("https");
+import https from "https";
 
-exports.searchApp = async (req, res) => {
+export async function searchApp(req, res) {
   const { query } = req.query;
   console.log("Requête reçue sur /search-app avec query:", query);
 

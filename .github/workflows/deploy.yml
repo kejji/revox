@@ -23,8 +23,14 @@ jobs:
         run: npm install
         working-directory: backend
 
-      - name: Zip backend code
-        run: zip -r ../revox-backend.zip . -x "*.env"
+      - name: Bundle backend with esbuild
+        run: |
+          npm install --save-dev esbuild
+          npx esbuild index.js \
+            --bundle \
+            --platform=node \
+            --target=node18 \
+            --outfile=../revox-backend.js
         working-directory: backend
 
       - name: Configure AWS credentials
@@ -33,14 +39,18 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-west-3
-
+          
+      - name: Package bundle into zip
+        run: |
+          zip revox-backend.zip revox-backend.js
+      
       - name: Deploy to Lambda
         run: |
           aws lambda update-function-code \
             --function-name revox-backend \
             --zip-file fileb://revox-backend.zip \
             --region eu-west-3
-            
+
           aws lambda update-function-code \
             --function-name revox-worker \
             --zip-file fileb://revox-backend.zip \

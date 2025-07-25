@@ -1,5 +1,4 @@
-// extraire le sub Cognito (via Authorization header)
-module.exports = function decodeJwtSub(req, res, next) {
+export default function decodeJwtSub(req, res, next) {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
     try {
@@ -13,4 +12,4 @@ module.exports = function decodeJwtSub(req, res, next) {
     }
   }
   next();
-};
+}
