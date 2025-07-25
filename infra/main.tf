@@ -203,6 +203,13 @@ resource "aws_apigatewayv2_route" "extract" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
 }
 
+# GET /search-app
+resource "aws_apigatewayv2_route" "search_app" {
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /search-app"
+  target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+}
+
 # ANY /{proxy+} (inclut POST /extract et toutes tes autres routes Express)
 resource "aws_apigatewayv2_route" "proxy" {
   api_id    = aws_apigatewayv2_api.http_api.id
@@ -254,6 +261,7 @@ resource "aws_lambda_function" "api" {
   role             = aws_iam_role.lambda_exec.arn
   handler          = "index.handler"
   runtime          = "nodejs18.x"
+  timeout          = 10
   filename         = "${path.module}/dummy.zip"
   source_code_hash = filebase64sha256("${path.module}/dummy.zip")
   kms_key_arn = aws_kms_key.lambda_env.arn
