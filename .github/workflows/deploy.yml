@@ -30,7 +30,7 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --outfile=../revox-backend.js
+            --outfile=../index.js
         working-directory: backend
 
       - name: Configure AWS credentials
@@ -39,10 +39,10 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-west-3
-          
+
       - name: Package bundle into zip
         run: |
-          zip revox-backend.zip revox-backend.js
+          zip revox-backend.zip index.js
       
       - name: Deploy to Lambda
         run: |
