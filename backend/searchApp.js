@@ -10,7 +10,7 @@ exports.searchApp = async (req, res) => {
 
   try {
     // Importer dynamiquement les modules ESM
-    const gplay = require("google-play-scraper");
+    const { default: gplay } = await import("google-play-scraper");
     console.log("google-play-scraper importé");
     // Recherche iOS via l’API iTunes
     console.log("Lancement de la requête iTunes...");
