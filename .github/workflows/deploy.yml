@@ -42,7 +42,8 @@ jobs:
 
       - name: Package bundle into zip
         run: |
-          zip revox-backend.zip index.js backend/worker.js
+          cp backend/worker.js .
+          zip revox-backend.zip index.js worker.js
 
       - name: Debug zip content
         run: unzip -l revox-backend.zip
