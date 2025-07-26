@@ -42,8 +42,11 @@ jobs:
 
       - name: Package bundle into zip
         run: |
-          zip revox-backend.zip index.js worker.js
-      
+          zip revox-backend.zip index.js backend/worker.js
+
+      - name: Debug zip content
+        run: unzip -l revox-backend.zip
+ 
       - name: Deploy to Lambda
         run: |
           aws lambda update-function-code \
