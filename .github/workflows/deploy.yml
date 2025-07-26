@@ -42,7 +42,7 @@ jobs:
 
       - name: Package bundle into zip
         run: |
-          zip revox-backend.zip index.js
+          zip revox-backend.zip index.js worker.js
       
       - name: Deploy to Lambda
         run: |
