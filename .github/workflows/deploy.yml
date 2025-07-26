@@ -33,6 +33,22 @@ jobs:
             --outfile=../index.js
         working-directory: backend
 
+      - name: Bundle worker with esbuild
+        run: |
+          npx esbuild worker.js \
+            --bundle \
+            --platform=node \
+            --target=node18 \
+            --outfile=../worker.js
+        working-directory: backend
+
+      - name: Package bundle into zip
+        run: |
+          zip revox-backend.zip index.js worker.js
+
+      - name: Debug zip content
+        run: unzip -l revox-backend.zip
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -40,14 +56,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-west-3
 
-      - name: Package bundle into zip
-        run: |
-          cp backend/worker.js .
-          zip revox-backend.zip index.js worker.js
-
-      - name: Debug zip content
-        run: unzip -l revox-backend.zip
- 
       - name: Deploy to Lambda
         run: |
           aws lambda update-function-code \
