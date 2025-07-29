@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { DynamoDBClient, PutItemCommand, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -13,10 +16,11 @@ const BUCKET_NAME  = process.env.S3_BUCKET;
 const sqs = new SQSClient({ region: REGION });
 const ddb = new DynamoDBClient({ region: REGION });
 const s3 = new S3Client({ region: REGION });
+console.log("EXTRACTIONS_TABLE =", TABLE_NAME);
 
 export async function createExtraction(req, res) {
   try {
-    const { appName, iosAppId, androidAppId, fromDate, toDate } = req.body;
+    const { appName, appId, platform, fromDate, toDate } = req.body;
     const userId      = req.auth.sub;           // récupéré par express-jwt
     const extractionId = uuidv4();
     const nowISO      = new Date().toISOString();
@@ -28,8 +32,8 @@ export async function createExtraction(req, res) {
         user_id:       { S: userId },
         extraction_id: { S: extractionId },
         app_name:      { S: appName },
-        ios_app_id:    { S: iosAppId },
-        android_app_id:{ S: androidAppId },
+        platform:      { S: platform },
+        app_id:        { S: appId },
         from_date:     { S: fromDate },
         to_date:       { S: toDate },
         status:        { S: "pending" },
@@ -38,6 +42,7 @@ export async function createExtraction(req, res) {
       }
     }));
 
+    console.log("Envoi SQS avec :", { platform, appId });
     // 2. Publier le message dans SQS
     await sqs.send(new SendMessageCommand({
       QueueUrl:    QUEUE_URL,
@@ -45,8 +50,8 @@ export async function createExtraction(req, res) {
         userId,
         extractionId,
         appName,
-        iosAppId,
-        androidAppId,
+        platform,
+        appId,
         fromDate,
         toDate
       })

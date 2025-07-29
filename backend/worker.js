@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 // 1. Imports synchrones en CommonJS
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
@@ -18,13 +21,13 @@ exports.handler = async (event) => {
 
     try {
       message = JSON.parse(record.body);
-      const { userId, extractionId, appName, iosAppId, androidAppId, fromDate, toDate } = message;
+      const { userId, extractionId, appName, appId, platform, fromDate, toDate } = message;
 
       console.log("🛠️ Traitement extraction", extractionId);
 
       // Étape 1 : générer le contenu CSV
-      const content = await processApp(store, gplay, appName, iosAppId, androidAppId,fromDate,toDate);
-
+      const content = await processApp({ store, gplay, appName, platform, appId, fromDate, toDate });
+      
       // Étape 2 : envoyer vers S3
       const s3Key = `${appName}/${userId}/${extractionId}.csv`;
 
@@ -286,49 +289,38 @@ async function getAndroidReviews(gplay, appName, bundleId, startDate, endDate) {
 }
 
 // Fonction pour traiter une application
-async function processApp(store, gplay, appName, iosAppId, androidBundleId, startDate, endDate) {
-  try {
-    console.log(`\nTraitement de ${appName}`);
-    console.log(`Période d'extraction : du ${startDate} au ${endDate}`);
+async function processApp({ store, gplay, appName, platform, appId, fromDate, toDate }) {
+  console.log(`\nTraitement de ${appName} (${platform})`);
+  let allReviews = [];
 
-    // Récupérer les nouveaux avis
-    const [iosReviews, androidReviews] = await Promise.all([
-      getIOSReviews(store,appName, iosAppId, startDate, endDate),
-      getAndroidReviews(gplay, appName, androidBundleId, startDate, endDate)
-    ]);
-
-    // Concaténer tous les avis, sans se soucier des doublons
-    const allReviews = [...iosReviews, ...androidReviews];
-
-    if (allReviews.length > 0) {
-      // Trier par date décroissante
-      allReviews.sort((a, b) => new Date(b.date) - new Date(a.date));
-      
-      console.log(`Nombre total d'avis : ${allReviews.length}`);
-
-      const fields = [
-        'app_name',
-        'platform',
-        'date',
-        'rating',
-        'text',
-        'title',
-        'user_name',
-        'app_version',
-        'app_id',
-        'bundle_id',
-        'review_id',
-        'reply_date',
-        'reply_text'
-      ];
-
-      const json2csvParser = new Parser({ fields });
-      return json2csvParser.parse(allReviews);
-    }
-    return 0;
-  } catch (error) {
-    console.error(`Erreur lors du traitement de ${appName}:`, error);
-    return 0;
+  if (platform === "ios") {
+    allReviews = await getIOSReviews(store, appName, appId, fromDate, toDate);
+  } else if (platform === "android") {
+    allReviews = await getAndroidReviews(gplay, appName, appId, fromDate, toDate);
+  } else {
+    throw new Error("Plateforme inconnue : " + platform);
   }
-}
 
+  if (allReviews.length === 0) return 0;
+
+  allReviews.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const fields = [
+    'app_name',
+    'platform',
+    'date',
+    'rating',
+    'text',
+    'title',
+    'user_name',
+    'app_version',
+    'app_id',
+    'bundle_id',
+    'review_id',
+    'reply_date',
+    'reply_text'
+  ];
+
+  const parser = new Parser({ fields });
+  return parser.parse(allReviews);
+}
