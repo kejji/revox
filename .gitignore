@@ -29,4 +29,3 @@ infra/terraform.tfstate.backup
 
 # Logs
 **/*.log
-

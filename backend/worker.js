@@ -29,7 +29,7 @@ exports.handler = async (event) => {
       const content = await processApp({ store, gplay, appName, platform, appId, fromDate, toDate });
       
       // Étape 2 : envoyer vers S3
-      const s3Key = `${appName}/${userId}/${extractionId}.csv`;
+      const s3Key = `${appName}-${appId}/${userId}/${extractionId}.csv`;
 
       await s3.send(new PutObjectCommand({
         Bucket: process.env.S3_BUCKET,

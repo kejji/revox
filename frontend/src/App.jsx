@@ -12,8 +12,10 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [userInfo, setUserInfo] = useState(null);
   const [appName, setAppName] = useState("");
-  const [iosAppId, setIosAppId] = useState("");
-  const [androidAppId, setAndroidAppId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedApps, setSelectedApps] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [extractStatus, setExtractStatus] = useState("");
@@ -41,27 +43,35 @@ export default function App() {
 
   const handleExtract = async () => {
     try {
-      const body = {
-        appName,
-        iosAppId,
-        androidAppId,
-        fromDate,
-        toDate,
-      };
-      const res = await axios.post(
-        `${import.meta.env.VITE_API_URL}/extract`,
-        body,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      setExtractStatus(`ID extraction : ${res.data.extractionId}`);
-      navigate(`/extraction/${res.data.extractionId}`);
+      if (selectedApps.length === 0) {
+        alert("Veuillez sélectionner au moins une application.");
+        return;
+      }
+  
+      for (const app of selectedApps) {
+        const body = {
+          appName: app.name,
+          iosAppId: app.store === "ios" ? app.id : "N/A",
+          androidAppId: app.store === "android" ? app.id : "N/A",
+          fromDate,
+          toDate,
+        };
+  
+        const res = await axios.post(
+          `${import.meta.env.VITE_API_URL}/extract`,
+          body,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+  
+        navigate(`/extraction/${res.data.extractionId}`);
+      }
+  
+      setExtractStatus("Extraction lancée pour " + selectedApps.length + " app(s)");
     } catch (err) {
       console.error('Erreur extraction:', err);
       setExtractStatus("Erreur lors du lancement de l'extraction");
     }
-  };
+  };  
 
   const handleLogout = async () => {
     try {
@@ -103,18 +113,57 @@ export default function App() {
           value={appName}
           onChange={(e) => setAppName(e.target.value)}
         />
+
         <input
           className="w-full p-2 border border-gray-300 rounded"
-          placeholder="ID iOS"
-          value={iosAppId}
-          onChange={(e) => setIosAppId(e.target.value)}
+          placeholder="Recherche d'application (iOS ou Android)"
+          value={searchQuery}
+          onChange={async (e) => {
+            const value = e.target.value;
+            setSearchQuery(value);
+            if (value.length >= 2) {
+              setIsSearching(true);
+              try {
+                const res = await axios.get(`${import.meta.env.VITE_API_URL}/search-app?query=${encodeURIComponent(value)}`);
+                setSearchResults(res.data);
+              } catch (err) {
+                console.error("Erreur recherche app:", err);
+                setSearchResults([]);
+              } finally {
+                setIsSearching(false);
+              }
+            } else {
+              setSearchResults([]);
+            }
+          }}
         />
-        <input
-          className="w-full p-2 border border-gray-300 rounded"
-          placeholder="ID Android"
-          value={androidAppId}
-          onChange={(e) => setAndroidAppId(e.target.value)}
-        />
+
+        {isSearching && <p>🔍 Recherche en cours...</p>}
+
+        {searchResults.length > 0 && (
+          <div className="border p-2 rounded bg-gray-50 max-h-60 overflow-y-auto text-left">
+            {searchResults.map((app) => (
+              <label key={`${app.store}-${app.id}`} className="flex items-center space-x-2 mb-1">
+                <input
+                  type="checkbox"
+                  checked={selectedApps.some(a => a.id === app.id && a.store === app.store)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedApps([...selectedApps, app]);
+                    } else {
+                      setSelectedApps(selectedApps.filter(a => !(a.id === app.id && a.store === app.store)));
+                    }
+                  }}
+                />
+                <span>
+                  <strong>{app.name}</strong> ({app.store})<br />
+                  <small>{app.bundleId}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+
         <input
           className="w-full p-2 border border-gray-300 rounded"
           type="date"
