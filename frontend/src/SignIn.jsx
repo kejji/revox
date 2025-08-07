@@ -1,55 +1,71 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Auth } from "aws-amplify";
+import { useNavigate } from "react-router-dom";
 
-export default function SignIn({ onSuccess }) {
+const SignIn = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(null);
+  const [error, setError] = useState("");
 
-  const handleSignIn = async () => {
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
     try {
-      const user = await Auth.signIn(email, password);
-
-      // ✅ Récupérer le bon token JWT pour appel API sécurisé
-      const token = user.signInUserSession.idToken.jwtToken;
-
-      // Sauvegarder dans le parent (App.jsx)
-      onSuccess(token);
-      setError(null);
+      await Auth.signIn(email, password);
+      navigate("/extract"); // ✅ Redirection vers le formulaire d'extraction
     } catch (err) {
-      console.error("SignIn error:", err);
-      setError("Incorrect email or password");
+      console.error("Erreur de connexion :", err);
+      setError("Identifiants incorrects ou utilisateur inexistant.");
     }
   };
 
   return (
-    <div className="p-4 bg-white rounded shadow max-w-md mx-auto my-6">
-      <h2 className="text-xl font-semibold mb-4">Sign In</h2>
+    <div style={{ maxWidth: "400px", margin: "auto", paddingTop: "3rem" }}>
+      <h2>Connexion</h2>
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: "1rem" }}>
+          <label>Email :</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            style={{ width: "100%", padding: "0.5rem" }}
+          />
+        </div>
 
-      <input
-        className="w-full p-2 border border-gray-300 rounded mb-2"
-        placeholder="Email"
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
+        <div style={{ marginBottom: "1rem" }}>
+          <label>Mot de passe :</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            style={{ width: "100%", padding: "0.5rem" }}
+          />
+        </div>
 
-      <input
-        className="w-full p-2 border border-gray-300 rounded mb-2"
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
+        {error && <p style={{ color: "red" }}>{error}</p>}
 
-      {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-
-      <button
-        className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
-        onClick={handleSignIn}
-      >
-        Sign In
-      </button>
+        <button
+          type="submit"
+          style={{
+            padding: "0.6rem 1.2rem",
+            backgroundColor: "#1a1a1a",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+          }}
+        >
+          Se connecter
+        </button>
+      </form>
     </div>
   );
-}
+};
+
+export default SignIn;

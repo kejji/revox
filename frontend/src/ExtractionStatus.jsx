@@ -1,77 +1,112 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Auth } from "aws-amplify";
 
-export default function ExtractionStatus({ token }) {
-  const { id } = useParams();
-  const [status, setStatus] = useState("pending");
-  const [downloadUrl, setDownloadUrl] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+const ExtractionStatus = () => {
+  const [extractions, setExtractions] = useState([]);
+  const [statuses, setStatuses] = useState({});
 
+  // Récupère les IDs depuis le localStorage au chargement
   useEffect(() => {
-    let interval;
+    const stored = JSON.parse(localStorage.getItem("extractions") || "[]");
+    setExtractions(stored);
+  }, []);
 
-    async function fetchStatus() {
-      try {
-        const res = await axios.get(`${import.meta.env.VITE_API_URL}/extract/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setStatus(res.data.status);
-        if (res.data.status === "done") {
-          clearInterval(interval);
-          // Récupération du lien S3
-          const linkRes = await axios.get(`${import.meta.env.VITE_API_URL}/extract/${id}/download`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          setDownloadUrl(linkRes.data.url);
-        }
-      } catch (err) {
-        console.error("Erreur statut extraction:", err);
-      } finally {
-        setLoading(false);
-      }
+  // Fonction pour récupérer le statut d'une extraction
+  const fetchStatus = async (id) => {
+    const session = await Auth.currentSession();
+    const token = session.getIdToken().getJwtToken();
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/extract/${id}`, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error();
+      const data = await response.json();
+      return data.status; // 🟢 par exemple "pending", "in_progress", "done"
+    } catch (err) {
+      return "inconnu";
     }
+  };
 
-    fetchStatus();
-    interval = setInterval(fetchStatus, 5000);
-    return () => clearInterval(interval);
-  }, [id, token]);
+  // Rafraîchir tous les statuts
+  const refreshStatuses = async () => {
+    const results = {};
+    for (const id of extractions) {
+      const status = await fetchStatus(id);
+      results[id] = status;
+    }
+    setStatuses(results);
+  };
+
+  // Fonction pour télécharger le fichier d'extraction
+  const downloadCsv = async (id) => {
+    try {
+      const session = await Auth.currentSession();
+      const token = session.getIdToken().getJwtToken();
+  
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/extract/${id}/download`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+  
+      if (!response.ok) throw new Error("Erreur lors de la récupération du lien de téléchargement");
+  
+      const data = await response.json();
+      const downloadUrl = data.url;
+  
+      // 🔽 Créer un lien et simuler un clic
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `extraction-${id}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      alert("Impossible de télécharger le fichier.");
+      console.error(err);
+    }
+  };
+
+  // 🚀 Appel initial + boucle toutes les 10 secondes
+  useEffect(() => {
+    if (extractions.length === 0) return;
+
+    refreshStatuses(); // premier appel
+
+    const interval = setInterval(() => {
+      refreshStatuses();
+    }, 5000); // toutes les 5s
+
+    return () => clearInterval(interval); // nettoyage du timer
+  }, [extractions]);
 
   return (
-    <div className="p-6 text-center">
-      <h2 className="text-xl font-bold mb-4">Statut de l'extraction</h2>
-      <p className="mb-2">ID : {id}</p>
-      <p className="mb-4">Status : {status}</p>
+    <div style={{ maxWidth: "600px", margin: "auto", padding: "2rem" }}>
+      <h2>Suivi des extractions</h2>
 
-      {status === "pending" && (
-        <div className="flex flex-col items-center">
-          <div className="loader mb-4"></div>
-          <p>Traitement en cours... Patiente un instant ☕</p>
-        </div>
+      {extractions.length === 0 ? (
+        <p>Aucune extraction trouvée.</p>
+      ) : (
+        <ul>
+          {extractions.map((id) => (
+            <li key={id} style={{ marginBottom: "1rem" }}>
+              <strong>ID :</strong> <code>{id}</code> –{" "}
+              <strong>Statut :</strong> <span>{statuses[id] || "Chargement..."}</span>
+              {statuses[id] === "done" && (
+                <button
+                  onClick={() => downloadCsv(id)}
+                  style={{ marginLeft: "1rem" }}
+                >
+                  Télécharger le CSV
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
-
-      {status === "done" && downloadUrl && (
-        <a
-          href={downloadUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          📥 Télécharger le CSV
-        </a>
-      )}
-
-      {status === "error" && (
-        <p className="text-red-600 mt-4">Une erreur est survenue. Merci de réessayer plus tard.</p>
-      )}
-      <button
-        onClick={() => navigate("/")}
-        className="mt-6 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-      >
-        🔙 Revenir au tableau de bord
-      </button>
     </div>
   );
-}
+};
+
+export default ExtractionStatus;
