@@ -4,7 +4,7 @@ dotenv.config();
 // Imports synchrones en CommonJS
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { Parser } = require("json2csv");
 const https = require("https");
 
@@ -14,11 +14,15 @@ const AWS_REGION = process.env.AWS_REGION;
 // Instanciation des clients AWS
 const s3 = new S3Client({ region: AWS_REGION});
 const db = new DynamoDBClient({ region: AWS_REGION });
-const ddbDoc = DynamoDBDocumentClient.from(
-  new DynamoDBClient({ region: AWS_REGION }),
-  { marshallOptions: { removeUndefinedValues: true } }
-);
 
+async function getDocClient() {
+  const { DynamoDBDocumentClient, PutCommand } = await import("@aws-sdk/lib-dynamodb");
+  const ddbDoc = DynamoDBDocumentClient.from(
+    new DynamoDBClient({ region: process.env.AWS_REGION }),
+    { marshallOptions: { removeUndefinedValues: true } }
+  );
+  return { ddbDoc, PutCommand };
+}
 // Instanciation des database
 const APP_REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 const EXTRACTION_TABLE = process.env.EXTRACTIONS_TABLE;
@@ -65,6 +69,7 @@ function toDdbItem(rv) {
 async function saveReviewToDDB(rawReview) {
   const rv = normalizeReview(rawReview);
   const item = toDdbItem(rv);
+  const ddbDoc = getDocClient();
 
   await ddbDoc.send(new PutCommand({
     TableName: APP_REVIEWS_TABLE,
