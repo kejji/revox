@@ -1,16 +1,85 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-// 1. Imports synchrones en CommonJS
+// Imports synchrones en CommonJS
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
 const { Parser } = require("json2csv");
 const https = require("https");
 
-// 2. Instanciation des clients AWS
-const s3 = new S3Client({ region: "eu-west-3" });
-const db = new DynamoDBClient({ region: "eu-west-3" });
+// Instanciation de la région AWS
+const AWS_REGION = process.env.AWS_REGION;
 
+// Instanciation des clients AWS
+const s3 = new S3Client({ region: AWS_REGION});
+const db = new DynamoDBClient({ region: AWS_REGION });
+const ddbDoc = DynamoDBDocumentClient.from(
+  new DynamoDBClient({ region: AWS_REGION }),
+  { marshallOptions: { removeUndefinedValues: true } }
+);
+
+// Instanciation des database
+const APP_REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
+const EXTRACTION_TABLE = process.env.EXTRACTIONS_TABLE;
+
+// Normalisation d'une review (Android/iOS) -> même schéma
+function normalizeReview(raw) {
+  return {
+    app_name: raw.app_name,
+    platform: String(raw.platform || "").toLowerCase(), // "ios" | "android"
+    date: new Date(raw.date).toISOString(),
+    rating: Number(raw.rating),
+    text: raw.text,
+    user_name: raw.user_name,
+    app_version: raw.app_version,
+    app_id: raw.app_id,
+    bundle_id: raw.bundle_id || raw.app_id,
+    review_id: String(raw.review_id),
+  };
+}
+
+// Clés PK/SK + item final pour DynamoDB
+function toDdbItem(rv) {
+  const app_pk = `${rv.platform}#${rv.bundle_id}`;
+  const ts_review = `${rv.date}#${rv.review_id}`;
+  return {
+    app_pk,
+    ts_review,
+    review_id: rv.review_id,
+    date: rv.date,
+    rating: rv.rating,
+    text: rv.text,
+    user_name: rv.user_name,
+    app_version: rv.app_version,
+    platform: rv.platform,
+    app_name: rv.app_name,
+    app_id: rv.app_id,
+    bundle_id: rv.bundle_id,
+    ingested_at: new Date().toISOString(),
+    source: "store-scraper-v1",
+  };
+}
+
+// Écriture idempotente (n'écrase pas s'il existe déjà)
+async function saveReviewToDDB(rawReview) {
+  const rv = normalizeReview(rawReview);
+  const item = toDdbItem(rv);
+
+  await ddbDoc.send(new PutCommand({
+    TableName: APP_REVIEWS_TABLE,
+    Item: item,
+    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)",
+  }));
+}
+
+// Fonction utilitaire de traitement par batch
+async function processInBatches(items, batchSize, fn) {
+  for (let i = 0; i < items.length; i += batchSize) {
+    const slice = items.slice(i, i + batchSize);
+    await Promise.allSettled(slice.map(fn));
+  }
+}
 exports.handler = async (event) => {
   // Import dynamiques des ESM
   const { default: gplay } = await import("google-play-scraper");
@@ -42,7 +111,7 @@ exports.handler = async (event) => {
 
       // Étape 3 : mise à jour DynamoDB
       await db.send(new UpdateItemCommand({
-        TableName: process.env.EXTRACTIONS_TABLE,
+        TableName: EXTRACTION_TABLE,
         Key: {
           user_id: { S: userId },
           extraction_id: { S: extractionId },
@@ -63,7 +132,7 @@ exports.handler = async (event) => {
       if (message?.userId && message?.extractionId) {
         try {
           await db.send(new UpdateItemCommand({
-            TableName: process.env.EXTRACTIONS_TABLE,
+            TableName: EXTRACTION_TABLE,
             Key: {
               user_id: { S: message.userId },
               extraction_id: { S: message.extractionId },
@@ -304,6 +373,18 @@ async function processApp({ store, gplay, appName, platform, appId, fromDate, to
   if (allReviews.length === 0) return 0;
 
   allReviews.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // Enregistre les avis collectés
+await processInBatches(reviews, 15, async (r) => {
+  try {
+    await saveReviewToDDB(r);
+  } catch (e) {
+    // On ignore l'erreur "ConditionalCheckFailed" (doublon), on loggue le reste
+    if (e?.name !== "ConditionalCheckFailedException") {
+      console.error("Erreur DDB save:", e?.message || e);
+    }
+  }
+});
 
   const fields = [
     'app_name',
