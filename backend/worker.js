@@ -4,7 +4,7 @@ dotenv.config();
 // Imports synchrones en CommonJS
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
 const { Parser } = require("json2csv");
 const https = require("https");
 
@@ -12,17 +12,13 @@ const https = require("https");
 const AWS_REGION = process.env.AWS_REGION;
 
 // Instanciation des clients AWS
-const s3 = new S3Client({ region: AWS_REGION});
+const s3 = new S3Client({ region: AWS_REGION });
 const db = new DynamoDBClient({ region: AWS_REGION });
+const ddbDoc = DynamoDBDocumentClient.from(
+  new DynamoDBClient({ region: AWS_REGION }),
+  { marshallOptions: { removeUndefinedValues: true } }
+);
 
-async function getDocClient() {
-  const { DynamoDBDocumentClient, PutCommand } = await import("@aws-sdk/lib-dynamodb");
-  const ddbDoc = DynamoDBDocumentClient.from(
-    new DynamoDBClient({ region: process.env.AWS_REGION }),
-    { marshallOptions: { removeUndefinedValues: true } }
-  );
-  return { ddbDoc, PutCommand };
-}
 // Instanciation des database
 const APP_REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 const EXTRACTION_TABLE = process.env.EXTRACTIONS_TABLE;
@@ -69,7 +65,6 @@ function toDdbItem(rv) {
 async function saveReviewToDDB(rawReview) {
   const rv = normalizeReview(rawReview);
   const item = toDdbItem(rv);
-  const ddbDoc = getDocClient();
 
   await ddbDoc.send(new PutCommand({
     TableName: APP_REVIEWS_TABLE,
@@ -101,7 +96,7 @@ exports.handler = async (event) => {
 
       // Étape 1 : générer le contenu CSV
       const content = await processApp({ store, gplay, appName, platform, appId, fromDate, toDate });
-      
+
       // Étape 2 : envoyer vers S3
       const s3Key = `${appName}-${appId}/${userId}/${extractionId}.csv`;
 
@@ -145,7 +140,7 @@ exports.handler = async (event) => {
             UpdateExpression: "SET #s = :s, error_message = :msg, updated_at = :now",
             ExpressionAttributeNames: { "#s": "status" },
             ExpressionAttributeValues: {
-              ":s":   { S: "error" },
+              ":s": { S: "error" },
               ":msg": { S: error.message || "Erreur inconnue" },
               ":now": { S: new Date().toISOString() },
             }
@@ -197,7 +192,7 @@ function getBundleId(appId) {
 
 
 // Fonction pour récupérer les avis iOS
-async function getIOSReviews(store,appName, appId, startDate, endDate) {
+async function getIOSReviews(store, appName, appId, startDate, endDate) {
   try {
     if (!appId || appId === 'N/A') {
       console.log(`Pas d'App ID iOS pour ${appName}, ignoré.`);
@@ -206,7 +201,7 @@ async function getIOSReviews(store,appName, appId, startDate, endDate) {
 
     console.log(`\nRécupération des avis iOS pour ${appName} (App ID: ${appId})`);
     console.log(`Période: du ${startDate} au ${endDate}`);
-    
+
     const bundleId = await getBundleId(appId);
     console.log(`Bundle ID trouvé : ${bundleId}`);
 
@@ -247,7 +242,7 @@ async function getIOSReviews(store,appName, appId, startDate, endDate) {
               reply_date: null,
               reply_text: null
             }));
-            
+
           // Si aucun avis de la page n'est dans la plage de dates, on arrête
           if (filteredReviews.length === 0 && reviews[reviews.length - 1].updated < new Date(startDate)) {
             hasReviewsInRange = false;
@@ -292,7 +287,7 @@ async function getAndroidReviews(gplay, appName, bundleId, startDate, endDate) {
 
     while (hasReviewsInRange && currentNum <= maxNum) {
       console.log(`Android : Tentative de récupération avec num=${currentNum} avis...`);
-      
+
       try {
         const result = await gplay.reviews({
           appId: bundleId,
@@ -380,16 +375,16 @@ async function processApp({ store, gplay, appName, platform, appId, fromDate, to
   allReviews.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   // Enregistre les avis collectés
-await processInBatches(reviews, 15, async (r) => {
-  try {
-    await saveReviewToDDB(r);
-  } catch (e) {
-    // On ignore l'erreur "ConditionalCheckFailed" (doublon), on loggue le reste
-    if (e?.name !== "ConditionalCheckFailedException") {
-      console.error("Erreur DDB save:", e?.message || e);
+  await processInBatches(reviews, 15, async (r) => {
+    try {
+      await saveReviewToDDB(r);
+    } catch (e) {
+      // On ignore l'erreur "ConditionalCheckFailed" (doublon), on loggue le reste
+      if (e?.name !== "ConditionalCheckFailedException") {
+        console.error("Erreur DDB save:", e?.message || e);
+      }
     }
-  }
-});
+  });
 
   const fields = [
     'app_name',
