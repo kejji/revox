@@ -375,7 +375,7 @@ async function processApp({ store, gplay, appName, platform, appId, fromDate, to
   allReviews.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   // Enregistre les avis collectés
-  await processInBatches(reviews, 15, async (r) => {
+  await processInBatches(allReviews, 15, async (r) => {
     try {
       await saveReviewToDDB(r);
     } catch (e) {
