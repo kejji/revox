@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Auth } from "aws-amplify";
+import { useNavigate } from "react-router-dom";
 
 const ExtractionStatus = () => {
   const [extractions, setExtractions] = useState([]);
   const [statuses, setStatuses] = useState({});
+  const navigate = useNavigate();
 
   // Récupère les IDs depuis le localStorage au chargement
   useEffect(() => {
@@ -43,18 +45,18 @@ const ExtractionStatus = () => {
     try {
       const session = await Auth.currentSession();
       const token = session.getIdToken().getJwtToken();
-  
+
       const response = await fetch(`${import.meta.env.VITE_API_URL}/extract/${id}/download`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
-  
+
       if (!response.ok) throw new Error("Erreur lors de la récupération du lien de téléchargement");
-  
+
       const data = await response.json();
       const downloadUrl = data.url;
-  
+
       // 🔽 Créer un lien et simuler un clic
       const link = document.createElement("a");
       link.href = downloadUrl;
@@ -66,6 +68,19 @@ const ExtractionStatus = () => {
       alert("Impossible de télécharger le fichier.");
       console.error(err);
     }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await Auth.signOut();
+      navigate("/signin");
+    } catch (err) {
+      console.error("Erreur lors de la déconnexion :", err);
+    }
+  };
+
+  const handleBack = () => {
+    navigate("/extract");
   };
 
   // 🚀 Appel initial + boucle toutes les 10 secondes
@@ -83,6 +98,14 @@ const ExtractionStatus = () => {
 
   return (
     <div style={{ maxWidth: "600px", margin: "auto", padding: "2rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+        <button onClick={handleBack} style={{ padding: "0.5rem 1rem", borderRadius: "6px" }}>
+          ← Retour
+        </button>
+        <button onClick={handleLogout} style={{ padding: "0.5rem 1rem", borderRadius: "6px" }}>
+          Se déconnecter
+        </button>
+      </div>
       <h2>Suivi des extractions</h2>
 
       {extractions.length === 0 ? (

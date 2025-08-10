@@ -1,12 +1,13 @@
 import React, { useState } from "react";
-import { Auth } from "aws-amplify";
 import { useNavigate } from "react-router-dom";
+import { Auth } from "aws-amplify";
 
 const ExtractForm = () => {
   const [step, setStep] = useState(1);
   const [selectedApps, setSelectedApps] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [dateRange, setDateRange] = useState({
     startDate: "",
     endDate: "",
@@ -14,44 +15,20 @@ const ExtractForm = () => {
 
   const navigate = useNavigate();
 
-  const handleNext = () => setStep(2);
-  const handleBack = () => setStep(1);
-
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
 
     try {
+      setLoading(true);
       const response = await fetch(`${import.meta.env.VITE_API_URL}/search-app?query=${searchQuery}`);
       const data = await response.json();
+
       setSelectedApps([]);
       setSearchResults(data);
     } catch (err) {
       console.error("Erreur lors de la recherche :", err);
-    }
-  };
-
-  const handleExtract = async () => {
-    try {
-      const calls = selectedApps.map((app) =>
-        fetchExtraction({
-          appName: app.name,
-          appId: app.id,
-          platform: app.store,
-          fromDate: dateRange.startDate,
-          toDate: dateRange.endDate,
-        })
-      );
-
-      const extractionIds = await Promise.all(calls);
-
-      // Sauvegarder dans localStorage
-      localStorage.setItem("extractions", JSON.stringify(extractionIds));
-      // Rediriger vers /status
-      navigate("/status");
-
-    } catch (err) {
-      console.error("Erreur lors de l'extraction :", err);
-      alert("Une erreur est survenue lors de l'extraction.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -63,25 +40,37 @@ const ExtractForm = () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
+        "Authorization": `Bearer ${token}`,
       },
       body: JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      throw new Error("Échec de l'extraction");
-    }
+    if (!response.ok) throw new Error("Échec de l'extraction");
 
     const data = await response.json();
     return data.extractionId;
   };
 
-  // 🧠 Grouper les apps par nom
-  const groupedApps = searchResults.reduce((acc, app) => {
-    if (!acc[app.name]) acc[app.name] = {};
-    acc[app.name][app.store] = app;
-    return acc;
-  }, {});
+  const handleExtract = async () => {
+    const calls = selectedApps.map((app) =>
+      fetchExtraction({
+        appName: app.name,
+        appId: app.id,
+        platform: app.store,
+        fromDate: dateRange.startDate,
+        toDate: dateRange.endDate,
+      })
+    );
+
+    try {
+      const extractionIds = await Promise.all(calls);
+      localStorage.setItem("extractions", JSON.stringify(extractionIds));
+      navigate("/status");
+    } catch (err) {
+      console.error("Erreur lors de l'extraction :", err);
+      alert("Une erreur est survenue lors de l'extraction.");
+    }
+  };
 
   const isSelected = (app) => {
     return selectedApps.some((a) => a.id === app.id && a.store === app.store);
@@ -103,10 +92,30 @@ const ExtractForm = () => {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await Auth.signOut();
+      navigate("/signin");
+    } catch (err) {
+      console.error("Erreur lors de la déconnexion :", err);
+    }
+  };
+
+  const groupedApps = searchResults.reduce((acc, app) => {
+    if (!acc[app.name]) acc[app.name] = { icon: app.icon };
+    acc[app.name][app.store] = app;
+    return acc;
+  }, {});
+
   return (
-    <div style={{ textAlign: "left", maxWidth: "700px", margin: "auto" }}>
+    <div style={{ maxWidth: "800px", margin: "auto", padding: "2rem" }}>
       {step === 1 && (
-        <div>
+        <>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "1rem" }}>
+            <button onClick={handleLogout} style={{ backgroundColor: "#eee", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer" }}>
+              Se déconnecter
+            </button>
+          </div>
           <h2>Étape 1 : Recherche et sélection d'apps</h2>
 
           <div style={{ marginBottom: "1rem" }}>
@@ -121,60 +130,61 @@ const ExtractForm = () => {
               Rechercher
             </button>
           </div>
-
+          {loading && <p>Chargement en cours...</p>}
           {Object.keys(groupedApps).length > 0 && (
-            <div style={{ marginTop: "1rem" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left" }}>Nom de l'app</th>
-                    <th>iOS</th>
-                    <th>Android</th>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>App</th>
+                  <th style={{ textAlign: "center" }}>
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg" alt="iOS" width="20" />
+                  </th>
+                  <th style={{ textAlign: "center" }}>
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/d/d7/Android_robot.svg" alt="Android" width="20" />
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(groupedApps).map(([name, stores]) => (
+                  <tr key={name} style={{ borderBottom: "1px solid #ccc" }}>
+                    <td style={{ padding: "0.5rem", display: "flex", alignItems: "center" }}>
+                      <img src={stores.icon} alt={name} style={{ width: 32, height: 32, marginRight: "0.5rem" }} />
+                      {name}
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        disabled={!stores.ios || isDisabled(stores.ios)}
+                        checked={stores.ios ? isSelected(stores.ios) : false}
+                        onChange={() => toggleSelection(stores.ios)}
+                      />
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        disabled={!stores.android || isDisabled(stores.android)}
+                        checked={stores.android ? isSelected(stores.android) : false}
+                        onChange={() => toggleSelection(stores.android)}
+                      />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(groupedApps).map(([name, stores]) => (
-                    <tr key={name}>
-                      <td>{name}</td>
-                      <td style={{ textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          disabled={!stores.ios || isDisabled(stores.ios)}
-                          checked={stores.ios ? isSelected(stores.ios) : false}
-                          onChange={() => toggleSelection(stores.ios)}
-                        />
-                      </td>
-                      <td style={{ textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          disabled={!stores.android || isDisabled(stores.android)}
-                          checked={stores.android ? isSelected(stores.android) : false}
-                          onChange={() => toggleSelection(stores.android)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {Object.keys(groupedApps).length === 0 && searchResults.length > 0 && (
-            <p>Aucune app affichable.</p>
+                ))}
+              </tbody>
+            </table>
           )}
 
           <button
-            onClick={handleNext}
+            onClick={() => setStep(2)}
             disabled={selectedApps.length === 0}
             style={{ marginTop: "1rem" }}
           >
             Suivant
           </button>
-        </div>
+        </>
       )}
 
       {step === 2 && (
-        <div>
+        <>
           <h2>Étape 2 : Choix de la période</h2>
 
           <div style={{ marginBottom: "1rem" }}>
@@ -208,7 +218,7 @@ const ExtractForm = () => {
           </div>
 
           <div style={{ marginTop: "2rem" }}>
-            <button onClick={handleBack}>Retour</button>
+            <button onClick={() => setStep(1)}>Retour</button>
             <button
               onClick={handleExtract}
               disabled={!dateRange.startDate || !dateRange.endDate}
@@ -217,7 +227,7 @@ const ExtractForm = () => {
               Lancer l'extraction
             </button>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
