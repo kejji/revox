@@ -151,6 +151,45 @@ resource "aws_dynamodb_table" "extractions" {
 }
 
 ########################################
+# Table DynamoDB : APP_REVIEWS
+########################################
+resource "aws_dynamodb_table" "app_reviews" {
+  name         = "revox_app_reviews"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key  = "app_pk"
+  range_key = "ts_review"
+
+  attribute { 
+    name = "app_pk"
+    type = "S" 
+  }
+  attribute { 
+    name = "ts_review"
+    type = "S" 
+  }
+
+  # GSI pour lookup/anti‑doublon rapide par review_id
+  global_secondary_index {
+    name               = "by_review_id"
+    hash_key           = "review_id"
+    range_key          = "app_pk"
+    projection_type    = "ALL"
+  }
+
+  # Attribut déclaré pour la GSI
+  attribute { 
+    name = "review_id"
+    type = "S" 
+  }
+
+  tags = {
+    Name = "Revox App Reviews"
+  }
+}
+
+
+########################################
 # SQS : file pour orchestrer les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {
@@ -268,6 +307,7 @@ resource "aws_lambda_function" "api" {
   environment {
     variables = {
       EXTRACTIONS_TABLE    = aws_dynamodb_table.extractions.name
+      APP_REVIEWS_TABLE    = aws_dynamodb_table.app_reviews.name
       EXTRACTION_QUEUE_URL = aws_sqs_queue.extraction_queue.url
       S3_BUCKET = aws_s3_bucket.csv_bucket.bucket
     }
@@ -297,6 +337,7 @@ resource "aws_lambda_function" "worker" {
   environment {
     variables = {
       EXTRACTIONS_TABLE = aws_dynamodb_table.extractions.name
+      APP_REVIEWS_TABLE    = aws_dynamodb_table.app_reviews.name
       S3_BUCKET = aws_s3_bucket.csv_bucket.bucket    
     }
   }

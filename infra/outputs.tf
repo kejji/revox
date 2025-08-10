@@ -10,6 +10,10 @@ output "extractions_table_name" {
   value = trimspace(aws_dynamodb_table.extractions.name)
 }
 
+output "app_reviews_table_name" {
+  value       = trimspace(aws_dynamodb_table.app_reviews.name)
+}
+
 output "extraction_queue_url" {
   description = "URL de la queue SQS pour les extractions"
   value = trimspace(aws_sqs_queue.extraction_queue.url)
