@@ -79,19 +79,12 @@ async function saveReviewToDDB(rawReview, { cache } = {}) {
   const item = toDdbItem(rv);
   const rid = item.review_id;
 
-  // Anti doublon in‑memory (dans le run courant)
-  if (cache && cache.has(rid)) return;
-
-  // Anti doublon cross‑runs : s'il existe déjà un item avec ce review_id, on skippe
-  if (await existsByReviewId(rid)) {
-    cache && cache.add(rid);
-    return;
-  }
+  if (cache && cache.has(rid)) return; // dédup locale
 
   await ddbDoc.send(new PutCommand({
     TableName: APP_REVIEWS_TABLE,
     Item: item,
-    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)",
+    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)"
   }));
 
   cache && cache.add(rid);
@@ -168,15 +161,20 @@ function hashFNV1a(str = "") {
   return h.toString(36);
 }
 
+/**
+ * Règle d'ID canonique (sans lecture en base) :
+ * - iOS    -> ios_${bundleId}_${storeId}    (legacy iOS)
+ * - Android-> android_${bundleId}_${ts}_${hash(text|user)} (legacy Android)
+ */
 function buildReviewId({ platform, bundleId, storeId, dateISO, text, user_name }) {
   const p = String(platform).toLowerCase();
-  const prefix = `${p}_${bundleId}_`;
-  if (storeId) return prefix + String(storeId);
-
-  const ts = Number.isFinite(Date.parse(dateISO)) ? Date.parse(dateISO) : Date.now();
-  const sigBase = `${(text || "").trim().slice(0, 200)}|${(user_name || "").trim().toLowerCase()}`;
-  const sig = hashFNV1a(sigBase);
-  return `${prefix}${ts}_${sig}`;
+  if (p === "ios" && storeId) {
+    return `ios_${bundleId}_${String(storeId)}`;
+  }
+  // ANDROID (et fallback iOS au pire) : legacy canonique
+  const ts = toMillisSafe(dateISO);
+  const sig = hashFNV1a(`${(text || "").trim().slice(0,200)}|${(user_name || "").trim().toLowerCase()}`);
+  return `${p}_${bundleId}_${ts}_${sig}`;
 }
 
 async function existsByReviewId(reviewId) {
@@ -234,10 +232,12 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
   let keepPaging = true;
 
   // Helpers robustes
-  const toMillis = (v) => {
+  // date -> timestamp en ms (robuste: string/Date/number)
+  function toMillis(v) {
+    if (v instanceof Date) return v.getTime();
     const t = typeof v === "number" ? v : Date.parse(v);
     return Number.isFinite(t) ? t : Date.now();
-  };
+  }
   const toISODate = (v) => new Date(toMillis(v)).toISOString();
 
   while (keepPaging) {
@@ -256,8 +256,8 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
       const rid = buildReviewId({
         platform: "android",
         bundleId: appId,
-        storeId: r?.reviewId,                // prioritaire si présent
-        dateISO: dateISO,                    // sinon fallback
+        storeId: r?.reviewId,
+        dateISO: dateISO,
         text: r?.text,
         user_name: r?.userName
       });
@@ -408,7 +408,7 @@ async function runIncremental({ appName, platform, appId, backfillDays, gplay, s
   // 3) Insertions idempotentes (tri par date croissante pour la cohérence)
   const toInsert = (fetched || []).sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  // Dédup en mémoire (au cas où la pagination renvoie la même review 2x)
+  // 4) Dédup
   const seenInBatch = new Set();
   const uniqByRid = [];
   for (const it of toInsert) {
@@ -416,19 +416,9 @@ async function runIncremental({ appName, platform, appId, backfillDays, gplay, s
     seenInBatch.add(it.review_id);
     uniqByRid.push(it);
   }
-
-  let ok = 0, dup = 0, ko = 0;
+  
   const cache = new Set();
-
-  await processInBatches(uniqByRid, 15, async (r) => {
-    try {
-      await saveReviewToDDB(r, { cache });
-      ok++;
-    } catch (e) {
-      if (e?.name === "ConditionalCheckFailedException") dup++;
-      else { ko++; console.error("saveReviewToDDB error:", e?.message || e); }
-    }
-  });
+  await processInBatches(uniqByRid, 15, (r) => saveReviewToDDB(r, { cache }));
 
   console.log(`[INC] inserted=${ok} dups=${dup} errors=${ko}`);
   return { inserted: ok, duplicates: dup, errors: ko, totalFetched: fetched.length };
