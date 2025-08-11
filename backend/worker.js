@@ -55,7 +55,9 @@ function normalizeReview(raw) {
 
 function toDdbItem(rv) {
   const app_pk = `${rv.platform}#${rv.bundle_id}`;
-  const ts_review = `${rv.date}#${rv.review_id}`;
+  const sig = sig3(rv.date, rv.text, rv.user_name);
+  const ts_review = `${rv.date}#${sig}`;
+  
   return {
     app_pk,
     ts_review,
@@ -195,6 +197,13 @@ function toMillis(v) {
   if (v instanceof Date) return v.getTime();
   const t = typeof v === "number" ? v : Date.parse(v);
   return Number.isFinite(t) ? t : Date.now();
+}
+
+function norm(s) { return (s ?? "").toString().trim().toLowerCase(); }
+
+function sig3(dateISO, text, user) {
+  // on signe la date telle quelle + texte normalisé + username normalisé
+  return hashFNV1a(`${dateISO}#${norm(text)}#${norm(user)}`);
 }
 
 // ---------------------------------------------------------------------------
