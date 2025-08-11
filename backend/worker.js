@@ -226,50 +226,60 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
 }
 
 async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO }) {
-  // appId = identifiant numérique sur l'App Store
-  // bundleId = reverse-DNS (ex: "com.bank.app")
-  const pageSize = 10; // app-store-scraper renvoie par pages (taille interne)
+  const MAX_PAGES = 10;      // app-store-scraper: pages 0..9
   let page = 0;
   let results = [];
-  let keepPaging = true;
 
-  while (keepPaging) {
+  // Helpers dates robustes
+  const toMillis = (v) => {
+    if (v instanceof Date) return v.getTime();
+    const t = typeof v === "number" ? v : Date.parse(v);
+    return Number.isFinite(t) ? t : Date.now();
+  };
+  const toISODate = (v) => new Date(toMillis(v)).toISOString();
+
+  while (page < MAX_PAGES) {
     const resp = await store.reviews({
-      id: appId, // l'API accepte l'id numérique
-      sort: store.sort.RECENT,
-      page,
+      id: appId,                 // id numérique iOS
+      sort: store.sort.RECENT,   // du plus récent au plus ancien
+      page,                      // 0..9
       country: "fr",
       lang: "fr",
     });
 
-    const list = (resp || []).map((r) => ({
+    // Rien reçu -> stop
+    if (!resp || resp.length === 0) break;
+
+    // Map + normalisation
+    const list = resp.map((r) => ({
       app_name: appName,
       platform: "ios",
-      date: r?.date ? new Date(r.date).toISOString() : new Date().toISOString(),
+      date: toISODate(r?.date),
       rating: r?.score,
       text: r?.text,
-      user_name: r?.userName,
-      app_version: r?.version,
+      user_name: r?.userName ?? "",
+      app_version: r?.version ?? "",
       app_id: appId,
       bundle_id: bundleId,
-      review_id: String(r?.id ?? `${appId}_${page}_${Math.random().toString(36).slice(2)}`),
+      review_id: String(r?.id ?? `${appId}_${page}_${toMillis(r?.date)}`),
     }));
 
-    // Filtrer sur la fenêtre + détection seuil
+    // Filtrage par fenêtre + détection de seuil
     let sawOlder = false;
     for (const it of list) {
-      if (isWithin(it.date, fromISO, toISO)) {
+      const t = new Date(it.date).getTime();
+      if (t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime()) {
         results.push(it);
-      } else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) {
+      } else if (t < new Date(fromISO).getTime()) {
+        // On a dépassé la fenêtre (plus ancien que fromISO) → on pourra stopper
         sawOlder = true;
       }
     }
 
-    // Heuristique d'arrêt: si on a rencontré des dates < fromISO, on peut stopper
-    if (sawOlder || list.length === 0) break;
+    // Si toute la page est plus ancienne que fromISO, on arrête
+    if (sawOlder) break;
 
     page += 1;
-    if (page > 50) break; // garde-fou
   }
 
   return results;
