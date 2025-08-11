@@ -230,6 +230,7 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
   let page = 1;
   let results = [];
 
+  // Helpers dates robustes
   const toMillis = (v) => {
     if (v instanceof Date) return v.getTime();
     const t = typeof v === "number" ? v : Date.parse(v);
@@ -237,24 +238,46 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
   };
   const toISODate = (v) => new Date(toMillis(v)).toISOString();
 
+  // Certaines versions attendent { id: <num> }, d'autres { appId: <bundle> }.
+  // On tente d'abord "id", puis si page1 vide on bascule sur "appId".
+  let useBundleParam = false;
+
   while (page <= MAX_PAGES) {
-    const resp = await store.reviews({
-      id: bundleId,
+    const args = {
       sort: store.sort.RECENT,
       page,
       country: "fr",
       lang: "fr",
-    });
+      ...(useBundleParam ? { appId: bundleId } : { id: appId }),
+    };
+
+    let resp;
+    try {
+      resp = await store.reviews(args);
+    } catch (e) {
+      // Si la 1ère page échoue avec "id", retente avec "appId"
+      if (page === 1 && !useBundleParam) {
+        useBundleParam = true;
+        continue; // relance cette page avec appId=bundleId
+      }
+      console.error(`[iOS] erreur page=${page} (${useBundleParam ? "appId" : "id"}):`, e.message || e);
+      break;
+    }
 
     const arr = Array.isArray(resp) ? resp : [];
-    console.log(`[iOS] page=${page} items=${arr.length}`);
+    // Si 1ère page vide avec "id", retente avec "appId"
+    if (page === 1 && !useBundleParam && arr.length === 0) {
+      useBundleParam = true;
+      continue; // relance page 1
+    }
 
     if (arr.length === 0) break;
 
     let sawOlder = false;
 
     for (const r of arr) {
-      const dateISO = toISODate(r?.date);
+      // Certaines versions renvoient r.updated, d'autres r.date
+      const dateISO = toISODate(r?.updated ?? r?.date);
       const t = new Date(dateISO).getTime();
 
       if (t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime()) {
@@ -262,21 +285,24 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
           app_name: appName,
           platform: "ios",
           date: dateISO,
-          rating: r?.score ?? r?.rating,   // selon versions de la lib
+          rating: r?.score ?? r?.rating ?? undefined,
           text: r?.text,
           user_name: r?.userName ?? "",
           app_version: r?.version ?? "",
-          app_id: appId,
-          bundle_id: bundleId,
+          app_id: appId,        // id numérique
+          bundle_id: bundleId,  // reverse-DNS
           review_id: String(r?.id ?? `${appId}_${page}_${t}`),
         });
       } else if (t < new Date(fromISO).getTime()) {
-        sawOlder = true;
+        sawOlder = true; // on est passé sous la fenêtre; pages suivantes seront encore plus anciennes
       }
     }
 
-    if (sawOlder) break; // les pages suivantes seront encore plus anciennes
+    if (sawOlder) break;
+
     page += 1;
+    // petite pause anti‑rate limit (facultatif)
+    await new Promise((r) => setTimeout(r, 500));
   }
 
   return results;
