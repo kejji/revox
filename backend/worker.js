@@ -188,6 +188,12 @@ async function existsByReviewId(reviewId) {
   return !!(out.Items && out.Items.length);
 }
 
+function toMillis(v) {
+  if (v instanceof Date) return v.getTime();
+  const t = typeof v === "number" ? v : Date.parse(v);
+  return Number.isFinite(t) ? t : Date.now();
+}
+
 // ---------------------------------------------------------------------------
 // iOS : resolve bundleId via iTunes Lookup si besoin
 // ---------------------------------------------------------------------------
@@ -231,13 +237,6 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
   let results = [];
   let keepPaging = true;
 
-  // Helpers robustes
-  // date -> timestamp en ms (robuste: string/Date/number)
-  function toMillis(v) {
-    if (v instanceof Date) return v.getTime();
-    const t = typeof v === "number" ? v : Date.parse(v);
-    return Number.isFinite(t) ? t : Date.now();
-  }
   const toISODate = (v) => new Date(toMillis(v)).toISOString();
 
   while (keepPaging) {
@@ -298,12 +297,6 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
   let page = 1;
   let results = [];
 
-  // Helpers dates robustes
-  const toMillis = (v) => {
-    if (v instanceof Date) return v.getTime();
-    const t = typeof v === "number" ? v : Date.parse(v);
-    return Number.isFinite(t) ? t : Date.now();
-  };
   const toISODate = (v) => new Date(toMillis(v)).toISOString();
 
   // Certaines versions attendent { id: <num> }, d'autres { appId: <bundle> }.
