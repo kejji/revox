@@ -1,66 +1,123 @@
-// worker.js — Ingestion incrémentale des reviews vers DynamoDB (APP_REVIEWS)
-// ---------------------------------------------------------------------------
-// Ce worker lit des messages SQS contenant { appName, platform, appId, backfillDays? }
-// 1) Lit en base la dernière review connue pour l'app
-// 2) Calcule une fenêtre [fromISO, toISO] (avec petit backfill de sécurité)
-// 3) Scrape le store (Android/iOS) sur la fenêtre
-// 4) Ecrit les nouvelles reviews dans APP_REVIEWS en Put idempotent
+// worker.js — Ingestion simple & idempotente de reviews vers DynamoDB
+// -------------------------------------------------------------------
+// SQS message attendu: { appName, platform: "android"|"ios", appId, backfillDays? }
 //
-// ENV attendues :
+// ENV requises:
 //   - AWS_REGION
 //   - APP_REVIEWS_TABLE
 //
-// Permissions IAM (Lambda):
-//   - dynamodb:Query sur la table APP_REVIEWS
-//   - dynamodb:PutItem sur la table APP_REVIEWS
+// Idempotence sans lecture: PK = platform#bundleId, SK = dateISO#sig(date,text,user)
+// -> Même review => même SK => Put conditionnel refuse toute réinsertion.
 //
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------
 
 const https = require("https");
-const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
 
-// Région & table
-const AWS_REGION = process.env.AWS_REGION;
-const APP_REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
+// ---------- Config ----------
+const REGION = process.env.AWS_REGION || "eu-west-3";
+const TABLE  = process.env.APP_REVIEWS_TABLE;
 
-// Doc client DynamoDB
+const FIRST_RUN_DAYS   = 30; // fenêtre au premier run
+const MAX_BACKFILL_DAYS = 30;
+
+// ---------- Clients ----------
 const ddbDoc = DynamoDBDocumentClient.from(
-  new DynamoDBClient({ region: AWS_REGION }),
+  new DynamoDBClient({ region: REGION }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
-// Paramétres pour la fenêtre de scraping
-const MAX_BACKFILL_DAYS = 30;
-const FIRST_RUN_DAYS = 30;
+// ---------- Utils ----------
+const toMillis = (v) => {
+  if (v instanceof Date) return v.getTime();
+  const t = typeof v === "number" ? v : Date.parse(v);
+  return Number.isFinite(t) ? t : Date.now();
+};
+const toISODate = (v) => new Date(toMillis(v)).toISOString();
+const norm = (s) => (s ?? "").toString().trim().toLowerCase();
 
-// ---------------------------------------------------------------------------
-// Normalisation + écriture DDB (idempotente)
-// ---------------------------------------------------------------------------
+// petit hash stable (FNV-1a)
+function hashFNV1a(str = "") {
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(36);
+}
 
-function normalizeReview(raw) {
-  return {
+// signature anti-doublon (sans lecture, sans GSI)
+const sig3 = (dateISO, text, user) => hashFNV1a(`${dateISO}#${norm(text)}#${norm(user)}`);
+
+const appPk = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
+
+const isWithin = (dateISO, fromISO, toISO) => {
+  const t = new Date(dateISO).getTime();
+  return t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime();
+};
+
+const processInBatches = async (items, size, fn) => {
+  for (let i = 0; i < items.length; i += size) {
+    const slice = items.slice(i, i + size);
+    await Promise.allSettled(slice.map(fn));
+  }
+};
+
+// ---------- Fenêtre d’ingestion ----------
+function normalizeBackfillDays(v, def = 2) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(Math.max(0, Math.floor(n)), MAX_BACKFILL_DAYS);
+}
+
+async function getLatestReviewItem(platform, bundleId) {
+  const out = await ddbDoc.send(new QueryCommand({
+    TableName: TABLE,
+    KeyConditionExpression: "app_pk = :pk",
+    ExpressionAttributeValues: { ":pk": appPk(platform, bundleId) },
+    ScanIndexForward: false,
+    Limit: 1
+  }));
+  return (out.Items && out.Items[0]) || null;
+}
+
+function computeWindow(latestItem, backfillDaysRaw) {
+  const backfillDays = normalizeBackfillDays(backfillDaysRaw, 2);
+  const now = new Date();
+
+  if (!latestItem) {
+    const from = new Date(now);
+    from.setUTCDate(from.getUTCDate() - FIRST_RUN_DAYS);
+    return { fromISO: from.toISOString(), toISO: now.toISOString(), reason: "first-run" };
+  }
+  const from = new Date(latestItem.date);
+  from.setUTCDate(from.getUTCDate() - backfillDays);
+  if (from.getTime() > now.getTime()) from.setTime(now.getTime());
+  return { fromISO: from.toISOString(), toISO: now.toISOString(), reason: "incremental" };
+}
+
+// ---------- Normalisation + écriture ----------
+function toDdbItem(raw) {
+  const rv = {
     app_name: raw.app_name,
-    platform: String(raw.platform || "").toLowerCase(), // "ios" | "android"
-    date: new Date(raw.date).toISOString(),
+    platform: String(raw.platform || "").toLowerCase(),
+    date: toISODate(raw.date),
     rating: raw.rating != null ? Number(raw.rating) : undefined,
     text: raw.text,
     user_name: raw.user_name,
     app_version: raw.app_version,
     app_id: raw.app_id,
     bundle_id: raw.bundle_id || raw.app_id,
-    review_id: String(raw.review_id),
+    review_id: raw.review_id != null ? String(raw.review_id) : undefined, // informatif
   };
-}
 
-function toDdbItem(rv) {
-  const app_pk = `${rv.platform}#${rv.bundle_id}`;
-  const sig = sig3(rv.date, rv.text, rv.user_name);
-  const ts_review = `${rv.date}#${sig}`;
-  
+  const pk = appPk(rv.platform, rv.bundle_id);
+  const sk = `${rv.date}#${sig3(rv.date, rv.text, rv.user_name)}`;
+
   return {
-    app_pk,
-    ts_review,
+    app_pk: pk,
+    ts_review: sk,
     review_id: rv.review_id,
     date: rv.date,
     rating: rv.rating,
@@ -76,140 +133,23 @@ function toDdbItem(rv) {
   };
 }
 
-async function saveReviewToDDB(rawReview, { cache } = {}) {
-  const rv = normalizeReview(rawReview);
-  const item = toDdbItem(rv);
-  const rid = item.review_id;
+async function saveReviewToDDB(raw, { cache }) {
+  const item = toDdbItem(raw);
 
-  if (cache && cache.has(rid)) return; // dédup locale
+  // dédup locale (ultra cheap)
+  const cacheKey = item.ts_review; // clé réelle d’unicité
+  if (cache && cache.has(cacheKey)) return;
 
   await ddbDoc.send(new PutCommand({
-    TableName: APP_REVIEWS_TABLE,
+    TableName: TABLE,
     Item: item,
     ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)"
   }));
 
-  cache && cache.add(rid);
+  cache && cache.add(cacheKey);
 }
 
-// ---------------------------------------------------------------------------
-// Helpers incrémental : clé d'app, dernière review, fenêtre
-// ---------------------------------------------------------------------------
-
-function appPk(platform, bundleId) {
-  return `${String(platform).toLowerCase()}#${bundleId}`;
-}
-
-async function getLatestReviewItem(platform, bundleId) {
-  const pk = appPk(platform, bundleId);
-  const out = await ddbDoc.send(new QueryCommand({
-    TableName: APP_REVIEWS_TABLE,
-    KeyConditionExpression: "app_pk = :pk",
-    ExpressionAttributeValues: { ":pk": pk },
-    ScanIndexForward: false, // plus récent d'abord
-    Limit: 1,
-  }));
-  return (out.Items && out.Items[0]) || null;
-}
-
-function normalizeBackfillDays(v, def = 2) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return def;
-  return Math.min(Math.max(0, Math.floor(n)), MAX_BACKFILL_DAYS);
-}
-
-function computeWindow(latestItem, backfillDaysRaw) {
-  const backfillDays = normalizeBackfillDays(backfillDaysRaw, 2);
-  const to = new Date();
-
-  if (!latestItem) {
-    // Premier run : on récupère un historique raisonnable (configurable)
-    const from = new Date(to);
-    from.setUTCDate(from.getUTCDate() - FIRST_RUN_DAYS);
-    return { fromISO: from.toISOString(), toISO: to.toISOString(), reason: "first-run" };
-  }
-
-  // On repart depuis la dernière date connue - backfillDays
-  const from = new Date(latestItem.date);
-  from.setUTCDate(from.getUTCDate() - backfillDays);
-
-  // Protection horloge (si last > now suite à skew)
-  if (from.getTime() > to.getTime()) {
-    from.setTime(to.getTime());
-  }
-
-  return { fromISO: from.toISOString(), toISO: to.toISOString(), reason: "incremental" };
-}
-
-function isWithin(dateISO, fromISO, toISO) {
-  const t = new Date(dateISO).getTime();
-  return t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime();
-}
-
-async function processInBatches(items, size, fn) {
-  for (let i = 0; i < items.length; i += size) {
-    const slice = items.slice(i, i + size);
-    await Promise.allSettled(slice.map(fn));
-  }
-}
-
-// hash déterministe (FNV-1a) pour fallback d'ID
-function hashFNV1a(str = "") {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  return h.toString(36);
-}
-
-function buildReviewId({ platform, bundleId, storeId, dateISO, text, user_name }) {
-  const p = String(platform).toLowerCase();
-
-  // iOS: ID numérique du store (legacy stable)
-  if (p === "ios" && storeId) {
-    return `ios_${bundleId}_${String(storeId)}`;
-  }
-
-  // ANDROID: **utiliser l’ID du store** (UUID) s’il est présent
-  if (p === "android" && storeId) {
-    return `android_${bundleId}_${String(storeId)}`;
-  }
-
-  // Fallback déterministe (si pas d'ID store)
-  const ts = toMillis(dateISO);
-  const sig = hashFNV1a(`${(text || "").trim().slice(0,200)}|${(user_name || "").trim().toLowerCase()}`);
-  return `${p}_${bundleId}_${ts}_${sig}`;
-}
-
-async function existsByReviewId(reviewId) {
-  const out = await ddbDoc.send(new QueryCommand({
-    TableName: APP_REVIEWS_TABLE,
-    IndexName: "by_review_id",
-    KeyConditionExpression: "review_id = :rid",
-    ExpressionAttributeValues: { ":rid": String(reviewId) },
-    Limit: 1
-  }));
-  return !!(out.Items && out.Items.length);
-}
-
-function toMillis(v) {
-  if (v instanceof Date) return v.getTime();
-  const t = typeof v === "number" ? v : Date.parse(v);
-  return Number.isFinite(t) ? t : Date.now();
-}
-
-function norm(s) { return (s ?? "").toString().trim().toLowerCase(); }
-
-function sig3(dateISO, text, user) {
-  // on signe la date telle quelle + texte normalisé + username normalisé
-  return hashFNV1a(`${dateISO}#${norm(text)}#${norm(user)}`);
-}
-
-// ---------------------------------------------------------------------------
-// iOS : resolve bundleId via iTunes Lookup si besoin
-// ---------------------------------------------------------------------------
-
+// ---------- Résolution bundleId ----------
 async function resolveIosBundleId(appId) {
   const url = `https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}`;
   return new Promise((resolve, reject) => {
@@ -222,36 +162,22 @@ async function resolveIosBundleId(appId) {
           const bundleId = json?.results?.[0]?.bundleId;
           if (!bundleId) return reject(new Error("bundleId iOS introuvable"));
           resolve(bundleId);
-        } catch (e) {
-          reject(e);
-        }
+        } catch (e) { reject(e); }
       });
     }).on("error", reject);
   });
 }
-
 async function resolveBundleId(platform, appId) {
-  if (String(platform).toLowerCase() === "ios") {
-    return resolveIosBundleId(appId);
-  }
-  // Android : bundleId === packageName
-  return appId;
+  return (String(platform).toLowerCase() === "ios") ? resolveIosBundleId(appId) : appId;
 }
 
-// ---------------------------------------------------------------------------
-// Scrapers (Android / iOS) — pagination + filtrage par fenêtre
-// On utilise les libs dynamiquement importées dans le handler.
-// ---------------------------------------------------------------------------
-
+// ---------- Scrapers ----------
 async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
   const pageSize = 100;
-  let token = undefined;
-  let results = [];
-  let keepPaging = true;
+  let token;
+  const out = [];
 
-  const toISODate = (v) => new Date(toMillis(v)).toISOString();
-
-  while (keepPaging) {
+  while (true) {
     const resp = await gplay.reviews({
       appId,
       sort: gplay.sort.NEWEST,
@@ -262,57 +188,38 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
       country: "fr",
     });
 
-    const list = (resp?.data || []).map((r) => {
-      const dateISO = toISODate(r?.date);
-      const rid = buildReviewId({
-        platform: "android",
-        bundleId: appId,
-        storeId: r?.reviewId,
-        dateISO: dateISO,
-        text: r?.text,
-        user_name: r?.userName
-      });
+    const mapped = (resp?.data || []).map((r) => ({
+      app_name: appName,
+      platform: "android",
+      date: toISODate(r?.date),
+      rating: r?.score,
+      text: r?.text,
+      user_name: r?.userName ?? "",
+      app_version: r?.appVersion ?? "",
+      app_id: appId,
+      bundle_id: appId,
+      review_id: r?.reviewId ? `android_${appId}_${r.reviewId}` : undefined, // info only
+    }));
 
-      return {
-        app_name: appName,
-        platform: "android",
-        date: dateISO,
-        rating: r?.score,
-        text: r?.text,
-        user_name: r?.userName ?? "",
-        app_version: r?.appVersion ?? "",
-        app_id: appId,
-        bundle_id: appId,
-        review_id: rid,
-      };
-    });
-
-    // Filtrer sur la fenêtre (et stopper si on est passé avant fromISO)
-    for (const it of list) {
-      if (isWithin(it.date, fromISO, toISO)) {
-        results.push(it);
-      } else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) {
-        keepPaging = false;
-        break;
-      }
+    // filtre fenêtre + arrêt quand on passe sous fromISO
+    let passedFrom = false;
+    for (const it of mapped) {
+      if (isWithin(it.date, fromISO, toISO)) out.push(it);
+      else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) { passedFrom = true; }
     }
+    if (passedFrom) break;
 
     token = resp?.nextPaginationToken;
     if (!token) break;
   }
 
-  return results;
+  return out;
 }
 
 async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO }) {
-  const MAX_PAGES = 10;      // app-store-scraper autorise 1..10
+  const MAX_PAGES = 10;
   let page = 1;
-  let results = [];
-
-  const toISODate = (v) => new Date(toMillis(v)).toISOString();
-
-  // Certaines versions attendent { id: <num> }, d'autres { appId: <bundle> }.
-  // On tente d'abord "id", puis si page1 vide on bascule sur "appId".
+  const out = [];
   let useBundleParam = false;
 
   while (page <= MAX_PAGES) {
@@ -324,166 +231,96 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
       ...(useBundleParam ? { appId: bundleId } : { id: appId }),
     };
 
-    let resp;
+    let resp = [];
     try {
       resp = await store.reviews(args);
     } catch (e) {
-      // Si la 1ère page échoue avec "id", retente avec "appId"
-      if (page === 1 && !useBundleParam) {
-        useBundleParam = true;
-        continue; // relance cette page avec appId=bundleId
-      }
-      console.error(`[iOS] erreur page=${page} (${useBundleParam ? "appId" : "id"}):`, e.message || e);
+      if (page === 1 && !useBundleParam) { useBundleParam = true; continue; }
+      console.error(`[iOS] page=${page} error:`, e?.message || e);
       break;
     }
 
-    const arr = Array.isArray(resp) ? resp : [];
-    // Si 1ère page vide avec "id", retente avec "appId"
-    if (page === 1 && !useBundleParam && arr.length === 0) {
-      useBundleParam = true;
-      continue; // relance page 1
+    if (!Array.isArray(resp) || resp.length === 0) {
+      if (page === 1 && !useBundleParam) { useBundleParam = true; continue; }
+      break;
     }
 
-    if (arr.length === 0) break;
+    // map
+    const mapped = resp.map((r) => ({
+      app_name: appName,
+      platform: "ios",
+      date: toISODate(r?.updated ?? r?.date),
+      rating: r?.score ?? r?.rating,
+      text: r?.text,
+      user_name: r?.userName ?? "",
+      app_version: r?.version ?? "",
+      app_id: appId,       // id numérique
+      bundle_id: bundleId, // reverse-DNS
+      review_id: r?.id ? `ios_${bundleId}_${r.id}` : undefined, // info only
+    }));
 
-    let sawOlder = false;
-
-    for (const r of arr) {
-      // Certaines versions renvoient r.updated, d'autres r.date
-      const dateISO = toISODate(r?.updated ?? r?.date);
-      const t = new Date(dateISO).getTime();
-
-      if (t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime()) {
-        const rid = buildReviewId({
-          platform: "ios",
-          bundleId: bundleId,
-          storeId: r?.id,                      // prioritaire si présent
-          dateISO,
-          text: r?.text,
-          user_name: r?.userName
-        });
-
-        results.push({
-          app_name: appName,
-          platform: "ios",
-          date: dateISO,
-          rating: r?.score ?? r?.rating ?? undefined,
-          text: r?.text,
-          user_name: r?.userName ?? "",
-          app_version: r?.version ?? "",
-          app_id: appId,        // id numérique
-          bundle_id: bundleId,  // reverse-DNS
-          review_id: rid,
-        });
-      } else if (t < new Date(fromISO).getTime()) {
-        sawOlder = true; // on est passé sous la fenêtre; pages suivantes seront encore plus anciennes
-      }
+    // filtre fenêtre + arrêt si on passe sous fromISO
+    let passedFrom = false;
+    for (const it of mapped) {
+      if (isWithin(it.date, fromISO, toISO)) out.push(it);
+      else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) { passedFrom = true; }
     }
-
-    if (sawOlder) break;
+    if (passedFrom) break;
 
     page += 1;
-    // petite pause anti‑rate limit (facultatif)
-    await new Promise((r) => setTimeout(r, 500));
   }
 
-  return results;
+  return out;
 }
 
-// ---------------------------------------------------------------------------
-// Orchestration incrémentale : calcule fenêtre -> scrape -> insert
-// ---------------------------------------------------------------------------
-
+// ---------- Orchestration ----------
 async function runIncremental({ appName, platform, appId, backfillDays, gplay, store }) {
-  const platformL = String(platform).toLowerCase();
-  const bundleId = await resolveBundleId(platformL, appId);
-  // 1) Dernière review en base
-  const latest = await getLatestReviewItem(platformL, bundleId);
+  const plat = String(platform).toLowerCase();
+  const bundleId = await resolveBundleId(plat, appId);
+
+  const latest = await getLatestReviewItem(plat, bundleId);
   const { fromISO, toISO, reason } = computeWindow(latest, backfillDays);
-  console.log(`[INC] app=${appName} plat=${platformL} bundle=${bundleId} ` +
-    `reason=${reason} window=${fromISO} → ${toISO} (backfillDays=${normalizeBackfillDays(backfillDays, 2)})`);
-  // 2) Scrape
+  console.log(`[INC] app=${appName} plat=${plat} bundle=${bundleId} reason=${reason} window=${fromISO}→${toISO}`);
+
   let fetched = [];
-  if (platformL === "android") {
-    fetched = await scrapeAndroidReviews({ gplay, appName, appId: bundleId, fromISO, toISO });
-  } else {
-    fetched = await scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO });
-  }
+  if (plat === "android") fetched = await scrapeAndroidReviews({ gplay, appName, appId: bundleId, fromISO, toISO });
+  else fetched = await scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO });
 
-  // 3) Insertions idempotentes (tri par date croissante pour la cohérence)
-  const toInsert = (fetched || []).sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  // 4) Dédup
-  const seenInBatch = new Set();
-  const uniqByRid = [];
-  let inMemoryDups = 0;
-
-  for (const it of toInsert) {
-    if (seenInBatch.has(it.review_id)) { inMemoryDups++; continue; }
-    seenInBatch.add(it.review_id);
-    uniqByRid.push(it);
-  }
-
-  let ok = 0, dup = 0, ko = 0;
+  // tri ascendant (cohérence), dédup locale (rare)
+  const ordered = (fetched || []).sort((a, b) => new Date(a.date) - new Date(b.date));
   const cache = new Set();
+  let ok = 0, dup = 0, ko = 0;
 
-  await processInBatches(uniqByRid, 15, async (r) => {
-    try {
-      await saveReviewToDDB(r, { cache });
-      ok++;
-    } catch (e) {
+  await processInBatches(ordered, 15, async (r) => {
+    try { await saveReviewToDDB(r, { cache }); ok++; }
+    catch (e) {
       if (e?.name === "ConditionalCheckFailedException") dup++;
-      else { ko++; console.error("saveReviewToDDB error:", e?.message || e); }
+      else { ko++; console.error("Put error:", e?.message || e); }
     }
   });
 
-  console.log(
-    `[INC] totalFetched=${fetched.length}, ` +
-    `inMemoryDups=${inMemoryDups}, ` +
-    `sentToDDB=${uniqByRid.length}, ` +
-    `inserted=${ok}, ddbDups=${dup}, errors=${ko}`
-  );
-
-  return {
-    inserted: ok,
-    duplicates: dup,
-    inMemoryDups,
-    errors: ko,
-    totalFetched: fetched.length,
-    sentToDDB: uniqByRid.length
-  };
+  console.log(`[INC] fetched=${fetched.length} inserted=${ok} ddbDups=${dup} errors=${ko}`);
+  return { fetched: fetched.length, inserted: ok, ddbDups: dup, errors: ko };
 }
 
-// ---------------------------------------------------------------------------
-// Handler SQS — route messages "incremental"
-// ---------------------------------------------------------------------------
-
+// ---------- Handler ----------
 exports.handler = async (event) => {
-  // Import dynamique des libs de scraping (garde le cold start raisonnable)
   const { default: gplay } = await import("google-play-scraper");
   const { default: store } = await import("app-store-scraper");
 
-  for (const record of event.Records || []) {
-    let message = null;
-    try {
-      message = JSON.parse(record.body || "{}");
-    } catch {
-      console.error("Message SQS invalide:", record.body);
-      continue;
-    }
+  for (const rec of event.Records || []) {
+    let msg;
+    try { msg = JSON.parse(rec.body || "{}"); }
+    catch { console.error("SQS message invalide:", rec.body); continue; }
 
-    const { appName, platform, appId, backfillDays } = message || {};
-    if (!appName || !platform || !appId) {
-      console.error("Message incomplet, ignoré:", message);
-      continue;
-    }
+    const { appName, platform, appId, backfillDays } = msg || {};
+    if (!appName || !platform || !appId) { console.error("Message incomplet:", msg); continue; }
 
     try {
       const stats = await runIncremental({ appName, platform, appId, backfillDays, gplay, store });
       console.log("[INC] Résultat:", stats);
-    } catch (error) {
-      console.error("Erreur dans le worker (message):", error);
-      // Pas de mise à jour d'une table d'extraction ici : ce worker est désormais "DB-first"
+    } catch (e) {
+      console.error("Erreur worker:", e?.message || e);
     }
   }
 };
