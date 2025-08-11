@@ -173,6 +173,13 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
   let results = [];
   let keepPaging = true;
 
+  // Helpers robustes
+  const toMillis = (v) => {
+    const t = typeof v === "number" ? v : Date.parse(v);
+    return Number.isFinite(t) ? t : Date.now();
+  };
+  const toISO = (v) => new Date(toMillis(v)).toISOString();
+
   while (keepPaging) {
     const resp = await gplay.reviews({
       appId,
@@ -184,25 +191,30 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
       country: "fr",
     });
 
-    const list = (resp?.data || []).map((r) => ({
-      app_name: appName,
-      platform: "android",
-      date: r?.date ? new Date(r.date).toISOString() : new Date().toISOString(),
-      rating: r?.score,
-      text: r?.text,
-      user_name: r?.userName,
-      app_version: r?.appVersion,
-      app_id: appId,
-      bundle_id: appId,
-      review_id: r?.reviewId || `${appId}_${r?.date?.getTime() || Date.now()}`,
-    }));
+    const list = (resp?.data || []).map((r) => {
+      const dateISO = toISO(r?.date);
+      // review_id: privilégie l'ID fourni, sinon fallback stable basé sur timestamp
+      const rid = r?.reviewId || `${appId}_${toMillis(r?.date)}`;
+
+      return {
+        app_name: appName,
+        platform: "android",
+        date: dateISO,
+        rating: r?.score,
+        text: r?.text,
+        user_name: r?.userName ?? "",     // garde des strings
+        app_version: r?.appVersion ?? "",
+        app_id: appId,
+        bundle_id: appId,
+        review_id: String(rid),
+      };
+    });
 
     // Filtrer sur la fenêtre (et stopper si on est passé avant fromISO)
     for (const it of list) {
       if (isWithin(it.date, fromISO, toISO)) {
         results.push(it);
       } else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) {
-        // On est passé sous la borne — on peut arrêter la pagination
         keepPaging = false;
         break;
       }
