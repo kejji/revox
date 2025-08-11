@@ -178,7 +178,7 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
     const t = typeof v === "number" ? v : Date.parse(v);
     return Number.isFinite(t) ? t : Date.now();
   };
-  const toISO = (v) => new Date(toMillis(v)).toISOString();
+  const toISODate = (v) => new Date(toMillis(v)).toISOString();
 
   while (keepPaging) {
     const resp = await gplay.reviews({
@@ -192,7 +192,7 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
     });
 
     const list = (resp?.data || []).map((r) => {
-      const dateISO = toISO(r?.date);
+      const dateISO = toISODate(r?.date);
       // review_id: privilégie l'ID fourni, sinon fallback stable basé sur timestamp
       const rid = r?.reviewId || `${appId}_${toMillis(r?.date)}`;
 
@@ -202,7 +202,7 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
         date: dateISO,
         rating: r?.score,
         text: r?.text,
-        user_name: r?.userName ?? "",     // garde des strings
+        user_name: r?.userName ?? "",
         app_version: r?.appVersion ?? "",
         app_id: appId,
         bundle_id: appId,
