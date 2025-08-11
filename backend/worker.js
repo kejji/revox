@@ -19,7 +19,7 @@ const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require("@aws-sdk/l
 const REGION = process.env.AWS_REGION || "eu-west-3";
 const TABLE  = process.env.APP_REVIEWS_TABLE;
 
-const FIRST_RUN_DAYS   = 30; // fenêtre au premier run
+const FIRST_RUN_DAYS   = 150; // fenêtre au premier run
 const MAX_BACKFILL_DAYS = 30;
 
 // ---------- Clients ----------
