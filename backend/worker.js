@@ -173,7 +173,7 @@ function buildReviewId({ platform, bundleId, storeId, dateISO, text, user_name }
   }
   // ANDROID (et fallback iOS au pire) : legacy canonique
   const ts = toMillisSafe(dateISO);
-  const sig = hashFNV1a(`${(text || "").trim().slice(0,200)}|${(user_name || "").trim().toLowerCase()}`);
+  const sig = hashFNV1a(`${(text || "").trim().slice(0, 200)}|${(user_name || "").trim().toLowerCase()}`);
   return `${p}_${bundleId}_${ts}_${sig}`;
 }
 
@@ -411,17 +411,42 @@ async function runIncremental({ appName, platform, appId, backfillDays, gplay, s
   // 4) Dédup
   const seenInBatch = new Set();
   const uniqByRid = [];
+  let inMemoryDups = 0;
+
   for (const it of toInsert) {
-    if (seenInBatch.has(it.review_id)) continue;
+    if (seenInBatch.has(it.review_id)) { inMemoryDups++; continue; }
     seenInBatch.add(it.review_id);
     uniqByRid.push(it);
   }
-  
-  const cache = new Set();
-  await processInBatches(uniqByRid, 15, (r) => saveReviewToDDB(r, { cache }));
 
-  console.log(`[INC] inserted=${ok} dups=${dup} errors=${ko}`);
-  return { inserted: ok, duplicates: dup, errors: ko, totalFetched: fetched.length };
+  let ok = 0, dup = 0, ko = 0;
+  const cache = new Set();
+
+  await processInBatches(uniqByRid, 15, async (r) => {
+    try {
+      await saveReviewToDDB(r, { cache });
+      ok++;
+    } catch (e) {
+      if (e?.name === "ConditionalCheckFailedException") dup++;
+      else { ko++; console.error("saveReviewToDDB error:", e?.message || e); }
+    }
+  });
+
+  console.log(
+    `[INC] totalFetched=${fetched.length}, ` +
+    `inMemoryDups=${inMemoryDups}, ` +
+    `sentToDDB=${uniqByRid.length}, ` +
+    `inserted=${ok}, ddbDups=${dup}, errors=${ko}`
+  );
+
+  return {
+    inserted: ok,
+    duplicates: dup,
+    inMemoryDups,
+    errors: ko,
+    totalFetched: fetched.length,
+    sentToDDB: uniqByRid.length
+  };
 }
 
 // ---------------------------------------------------------------------------
