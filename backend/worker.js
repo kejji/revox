@@ -74,15 +74,27 @@ function toDdbItem(rv) {
   };
 }
 
-async function saveReviewToDDB(rawReview) {
+async function saveReviewToDDB(rawReview, { cache } = {}) {
   const rv = normalizeReview(rawReview);
   const item = toDdbItem(rv);
+  const rid = item.review_id;
+
+  // Anti doublon in‑memory (dans le run courant)
+  if (cache && cache.has(rid)) return;
+
+  // Anti doublon cross‑runs : s'il existe déjà un item avec ce review_id, on skippe
+  if (await existsByReviewId(rid)) {
+    cache && cache.add(rid);
+    return;
+  }
 
   await ddbDoc.send(new PutCommand({
     TableName: APP_REVIEWS_TABLE,
     Item: item,
-    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)", // idempotence
+    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)",
   }));
+
+  cache && cache.add(rid);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +179,17 @@ function buildReviewId({ platform, bundleId, storeId, dateISO, text, user_name }
   return `${prefix}${ts}_${sig}`;
 }
 
+async function existsByReviewId(reviewId) {
+  const out = await ddbDoc.send(new QueryCommand({
+    TableName: APP_REVIEWS_TABLE,
+    IndexName: "by_review_id",
+    KeyConditionExpression: "review_id = :rid",
+    ExpressionAttributeValues: { ":rid": String(reviewId) },
+    Limit: 1
+  }));
+  return !!(out.Items && out.Items.length);
+}
+
 // ---------------------------------------------------------------------------
 // iOS : resolve bundleId via iTunes Lookup si besoin
 // ---------------------------------------------------------------------------
@@ -205,7 +228,6 @@ async function resolveBundleId(platform, appId) {
 // ---------------------------------------------------------------------------
 
 async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
-  // appId = packageName (ex: "com.fortuneo.android")
   const pageSize = 100;
   let token = undefined;
   let results = [];
@@ -385,11 +407,22 @@ async function runIncremental({ appName, platform, appId, backfillDays, gplay, s
 
   // 3) Insertions idempotentes (tri par date croissante pour la cohérence)
   const toInsert = (fetched || []).sort((a, b) => new Date(a.date) - new Date(b.date));
-  let ok = 0, dup = 0, ko = 0;
 
-  await processInBatches(toInsert, 15, async (r) => {
+  // Dédup en mémoire (au cas où la pagination renvoie la même review 2x)
+  const seenInBatch = new Set();
+  const uniqByRid = [];
+  for (const it of toInsert) {
+    if (seenInBatch.has(it.review_id)) continue;
+    seenInBatch.add(it.review_id);
+    uniqByRid.push(it);
+  }
+
+  let ok = 0, dup = 0, ko = 0;
+  const cache = new Set();
+
+  await processInBatches(uniqByRid, 15, async (r) => {
     try {
-      await saveReviewToDDB(r);
+      await saveReviewToDDB(r, { cache });
       ok++;
     } catch (e) {
       if (e?.name === "ConditionalCheckFailedException") dup++;
