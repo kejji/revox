@@ -226,11 +226,10 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
 }
 
 async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO }) {
-  const MAX_PAGES = 10;      // app-store-scraper: pages 0..9
-  let page = 0;
+  const MAX_PAGES = 10;      // app-store-scraper autorise 1..10
+  let page = 1;
   let results = [];
 
-  // Helpers dates robustes
   const toMillis = (v) => {
     if (v instanceof Date) return v.getTime();
     const t = typeof v === "number" ? v : Date.parse(v);
@@ -238,47 +237,45 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
   };
   const toISODate = (v) => new Date(toMillis(v)).toISOString();
 
-  while (page < MAX_PAGES) {
+  while (page <= MAX_PAGES) {
     const resp = await store.reviews({
-      id: appId,                 // id numérique iOS
-      sort: store.sort.RECENT,   // du plus récent au plus ancien
-      page,                      // 0..9
+      id: appId,                 // id numérique iOS (ex: "310790181")
+      sort: store.sort.RECENT,   // plus récent → plus ancien
+      page,                      // 1..10
       country: "fr",
       lang: "fr",
     });
 
-    // Rien reçu -> stop
-    if (!resp || resp.length === 0) break;
+    const arr = Array.isArray(resp) ? resp : [];
+    console.log(`[iOS] page=${page} items=${arr.length}`);
 
-    // Map + normalisation
-    const list = resp.map((r) => ({
-      app_name: appName,
-      platform: "ios",
-      date: toISODate(r?.date),
-      rating: r?.score,
-      text: r?.text,
-      user_name: r?.userName ?? "",
-      app_version: r?.version ?? "",
-      app_id: appId,
-      bundle_id: bundleId,
-      review_id: String(r?.id ?? `${appId}_${page}_${toMillis(r?.date)}`),
-    }));
+    if (arr.length === 0) break;
 
-    // Filtrage par fenêtre + détection de seuil
     let sawOlder = false;
-    for (const it of list) {
-      const t = new Date(it.date).getTime();
+
+    for (const r of arr) {
+      const dateISO = toISODate(r?.date);
+      const t = new Date(dateISO).getTime();
+
       if (t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime()) {
-        results.push(it);
+        results.push({
+          app_name: appName,
+          platform: "ios",
+          date: dateISO,
+          rating: r?.score ?? r?.rating,   // selon versions de la lib
+          text: r?.text,
+          user_name: r?.userName ?? "",
+          app_version: r?.version ?? "",
+          app_id: appId,
+          bundle_id: bundleId,
+          review_id: String(r?.id ?? `${appId}_${page}_${t}`),
+        });
       } else if (t < new Date(fromISO).getTime()) {
-        // On a dépassé la fenêtre (plus ancien que fromISO) → on pourra stopper
         sawOlder = true;
       }
     }
 
-    // Si toute la page est plus ancienne que fromISO, on arrête
-    if (sawOlder) break;
-
+    if (sawOlder) break; // les pages suivantes seront encore plus anciennes
     page += 1;
   }
 
