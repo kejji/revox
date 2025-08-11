@@ -207,7 +207,7 @@ async function getIOSReviews(store, appName, appId, startDate, endDate) {
 
     let allReviews = [];
     let currentPage = 1;
-    const MAX_PAGES = 10;
+    const MAX_PAGES = 100;
     let hasMoreReviews = true;
     let hasReviewsInRange = true;
 
