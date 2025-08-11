@@ -239,9 +239,9 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
 
   while (page <= MAX_PAGES) {
     const resp = await store.reviews({
-      id: appId,                 // id numérique iOS (ex: "310790181")
-      sort: store.sort.RECENT,   // plus récent → plus ancien
-      page,                      // 1..10
+      id: bundleId,
+      sort: store.sort.RECENT,
+      page,
       country: "fr",
       lang: "fr",
     });
