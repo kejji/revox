@@ -228,7 +228,7 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
 async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO }) {
   // appId = identifiant numérique sur l'App Store
   // bundleId = reverse-DNS (ex: "com.bank.app")
-  const pageSize = 100; // app-store-scraper renvoie par pages (taille interne)
+  const pageSize = 10; // app-store-scraper renvoie par pages (taille interne)
   let page = 0;
   let results = [];
   let keepPaging = true;
