@@ -172,7 +172,7 @@ function buildReviewId({ platform, bundleId, storeId, dateISO, text, user_name }
     return `ios_${bundleId}_${String(storeId)}`;
   }
   // ANDROID (et fallback iOS au pire) : legacy canonique
-  const ts = toMillisSafe(dateISO);
+  const ts = toMillis(dateISO);
   const sig = hashFNV1a(`${(text || "").trim().slice(0, 200)}|${(user_name || "").trim().toLowerCase()}`);
   return `${p}_${bundleId}_${ts}_${sig}`;
 }
