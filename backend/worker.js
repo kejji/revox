@@ -16,8 +16,6 @@
 //
 // ---------------------------------------------------------------------------
 
-//import dotenv from "dotenv";
-//dotenv.config();
 const https = require("https");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");

@@ -139,4 +139,41 @@ export async function downloadExtraction(req, res) {
   }
 }
 
+// --- Dispatcher pour l’ingestion incrémentale vers APP_REVIEWS ---
+// Objectif: pousser un message SQS compris par le worker "incremental"
+// Corps attendu (POST): { appName, platform, appId, backfillDays? }
+
+export async function dispatchIncrementalIngest(req, res) {
+  try {
+    const { appName, platform, appId, backfillDays } = req.body || {};
+
+    if (!appName || !platform || !appId) {
+      return res.status(400).json({
+        error: "appName, platform et appId sont requis"
+      });
+    }
+
+    const payload = {
+      mode: "incremental",
+      appName: String(appName),
+      platform: String(platform).toLowerCase(),       // "android" | "ios"
+      appId: String(appId),
+      backfillDays: Number.isFinite(Number(backfillDays)) ? Number(backfillDays) : 2
+    };
+
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: QUEUE_URL,
+      MessageBody: JSON.stringify(payload)
+    }));
+
+    return res.status(202).json({
+      ok: true,
+      queued: payload
+    });
+  } catch (err) {
+    console.error("Erreur dispatchIncrementalIngest:", err);
+    return res.status(500).json({ error: "Impossible d’enqueuer le job incrémental" });
+  }
+}
+
 
