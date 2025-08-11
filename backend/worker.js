@@ -161,19 +161,22 @@ function hashFNV1a(str = "") {
   return h.toString(36);
 }
 
-/**
- * Règle d'ID canonique (sans lecture en base) :
- * - iOS    -> ios_${bundleId}_${storeId}    (legacy iOS)
- * - Android-> android_${bundleId}_${ts}_${hash(text|user)} (legacy Android)
- */
 function buildReviewId({ platform, bundleId, storeId, dateISO, text, user_name }) {
   const p = String(platform).toLowerCase();
+
+  // iOS: ID numérique du store (legacy stable)
   if (p === "ios" && storeId) {
     return `ios_${bundleId}_${String(storeId)}`;
   }
-  // ANDROID (et fallback iOS au pire) : legacy canonique
+
+  // ANDROID: **utiliser l’ID du store** (UUID) s’il est présent
+  if (p === "android" && storeId) {
+    return `android_${bundleId}_${String(storeId)}`;
+  }
+
+  // Fallback déterministe (si pas d'ID store)
   const ts = toMillis(dateISO);
-  const sig = hashFNV1a(`${(text || "").trim().slice(0, 200)}|${(user_name || "").trim().toLowerCase()}`);
+  const sig = hashFNV1a(`${(text || "").trim().slice(0,200)}|${(user_name || "").trim().toLowerCase()}`);
   return `${p}_${bundleId}_${ts}_${sig}`;
 }
 
