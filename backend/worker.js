@@ -1,35 +1,47 @@
-import dotenv from "dotenv";
-dotenv.config();
+// worker.js — Ingestion incrémentale des reviews vers DynamoDB (APP_REVIEWS)
+// ---------------------------------------------------------------------------
+// Ce worker lit des messages SQS contenant { appName, platform, appId, backfillDays? }
+// 1) Lit en base la dernière review connue pour l'app
+// 2) Calcule une fenêtre [fromISO, toISO] (avec petit backfill de sécurité)
+// 3) Scrape le store (Android/iOS) sur la fenêtre
+// 4) Ecrit les nouvelles reviews dans APP_REVIEWS en Put idempotent
+//
+// ENV attendues :
+//   - AWS_REGION
+//   - APP_REVIEWS_TABLE
+//
+// Permissions IAM (Lambda):
+//   - dynamodb:Query sur la table APP_REVIEWS
+//   - dynamodb:PutItem sur la table APP_REVIEWS
+//
+// ---------------------------------------------------------------------------
 
-// Imports synchrones en CommonJS
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
-const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
-const { Parser } = require("json2csv");
+//import dotenv from "dotenv";
+//dotenv.config();
 const https = require("https");
+const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
 
-// Instanciation de la région AWS
+// Région & table
 const AWS_REGION = process.env.AWS_REGION;
+const APP_REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 
-// Instanciation des clients AWS
-const s3 = new S3Client({ region: AWS_REGION });
-const db = new DynamoDBClient({ region: AWS_REGION });
+// Doc client DynamoDB
 const ddbDoc = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: AWS_REGION }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
-// Instanciation des database
-const APP_REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
-const EXTRACTION_TABLE = process.env.EXTRACTIONS_TABLE;
+// ---------------------------------------------------------------------------
+// Normalisation + écriture DDB (idempotente)
+// ---------------------------------------------------------------------------
 
-// Normalisation d'une review (Android/iOS) -> même schéma
 function normalizeReview(raw) {
   return {
     app_name: raw.app_name,
     platform: String(raw.platform || "").toLowerCase(), // "ios" | "android"
     date: new Date(raw.date).toISOString(),
-    rating: Number(raw.rating),
+    rating: raw.rating != null ? Number(raw.rating) : undefined,
     text: raw.text,
     user_name: raw.user_name,
     app_version: raw.app_version,
@@ -39,7 +51,6 @@ function normalizeReview(raw) {
   };
 }
 
-// Clés PK/SK + item final pour DynamoDB
 function toDdbItem(rv) {
   const app_pk = `${rv.platform}#${rv.bundle_id}`;
   const ts_review = `${rv.date}#${rv.review_id}`;
@@ -61,7 +72,6 @@ function toDdbItem(rv) {
   };
 }
 
-// Écriture idempotente (n'écrase pas s'il existe déjà)
 async function saveReviewToDDB(rawReview) {
   const rv = normalizeReview(rawReview);
   const item = toDdbItem(rv);
@@ -69,339 +79,261 @@ async function saveReviewToDDB(rawReview) {
   await ddbDoc.send(new PutCommand({
     TableName: APP_REVIEWS_TABLE,
     Item: item,
-    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)",
+    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)", // idempotence
   }));
 }
 
-// Fonction utilitaire de traitement par batch
-async function processInBatches(items, batchSize, fn) {
-  for (let i = 0; i < items.length; i += batchSize) {
-    const slice = items.slice(i, i + batchSize);
+// ---------------------------------------------------------------------------
+// Helpers incrémental : clé d'app, dernière review, fenêtre
+// ---------------------------------------------------------------------------
+
+function appPk(platform, bundleId) {
+  return `${String(platform).toLowerCase()}#${bundleId}`;
+}
+
+async function getLatestReviewItem(platform, bundleId) {
+  const pk = appPk(platform, bundleId);
+  const out = await ddbDoc.send(new QueryCommand({
+    TableName: APP_REVIEWS_TABLE,
+    KeyConditionExpression: "app_pk = :pk",
+    ExpressionAttributeValues: { ":pk": pk },
+    ScanIndexForward: false, // plus récent d'abord
+    Limit: 1,
+  }));
+  return (out.Items && out.Items[0]) || null;
+}
+
+function computeWindow(latestItem, backfillDays = 1) {
+  const toISO = new Date().toISOString();
+  if (!latestItem) {
+    // Premier run : remonte large (30 jours) — ajuste au besoin
+    const from = new Date();
+    from.setUTCDate(from.getUTCDate() - 30);
+    return { fromISO: from.toISOString(), toISO };
+  }
+  const last = new Date(latestItem.date);
+  // Petit backfill (= on repart 1–2 jours en arrière pour éviter les trous)
+  last.setUTCDate(last.getUTCDate() - Math.max(0, Number(backfillDays) || 1));
+  return { fromISO: last.toISOString(), toISO };
+}
+
+function isWithin(dateISO, fromISO, toISO) {
+  const t = new Date(dateISO).getTime();
+  return t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime();
+}
+
+async function processInBatches(items, size, fn) {
+  for (let i = 0; i < items.length; i += size) {
+    const slice = items.slice(i, i + size);
     await Promise.allSettled(slice.map(fn));
   }
 }
-exports.handler = async (event) => {
-  // Import dynamiques des ESM
-  const { default: gplay } = await import("google-play-scraper");
-  const { default: store } = await import("app-store-scraper");
 
-  for (const record of event.Records) {
-    let message = null;
+// ---------------------------------------------------------------------------
+// iOS : resolve bundleId via iTunes Lookup si besoin
+// ---------------------------------------------------------------------------
 
-    try {
-      message = JSON.parse(record.body);
-      const { userId, extractionId, appName, appId, platform, fromDate, toDate } = message;
-
-      console.log("🛠️ Traitement extraction", extractionId);
-
-      // Étape 1 : générer le contenu CSV
-      const content = await processApp({ store, gplay, appName, platform, appId, fromDate, toDate });
-
-      // Étape 2 : envoyer vers S3
-      const s3Key = `${appName}-${appId}/${userId}/${extractionId}.csv`;
-
-      await s3.send(new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET,
-        Key: s3Key,
-        Body: content,
-        ContentType: "text/csv",
-      }));
-
-      console.log("CSV généré et envoyé à S3 :", s3Key);
-
-      // Étape 3 : mise à jour DynamoDB
-      await db.send(new UpdateItemCommand({
-        TableName: EXTRACTION_TABLE,
-        Key: {
-          user_id: { S: userId },
-          extraction_id: { S: extractionId },
-        },
-        UpdateExpression: "SET #s = :s, s3_key = :k, updated_at = :now",
-        ExpressionAttributeNames: { "#s": "status" },
-        ExpressionAttributeValues: {
-          ":s": { S: "done" },
-          ":k": { S: s3Key },
-          ":now": { S: new Date().toISOString() },
-        }
-      }));
-
-      console.log("Table DynamoDB mise à jour");
-    } catch (error) {
-      console.error("Erreur dans le worker :", error);
-
-      if (message?.userId && message?.extractionId) {
-        try {
-          await db.send(new UpdateItemCommand({
-            TableName: EXTRACTION_TABLE,
-            Key: {
-              user_id: { S: message.userId },
-              extraction_id: { S: message.extractionId },
-            },
-            UpdateExpression: "SET #s = :s, error_message = :msg, updated_at = :now",
-            ExpressionAttributeNames: { "#s": "status" },
-            ExpressionAttributeValues: {
-              ":s": { S: "error" },
-              ":msg": { S: error.message || "Erreur inconnue" },
-              ":now": { S: new Date().toISOString() },
-            }
-          }));
-          console.log("Statut mis à jour dans DynamoDB en erreur");
-        } catch (updateErr) {
-          console.error("Échec de mise à jour du statut d'erreur :", updateErr);
-        }
-      }
-    }
-  }
-};
-
-
-// Fonction pour vérifier si une date est dans la plage spécifiée
-function isDateInRange(dateStr, startDate, endDate) {
-  const date = new Date(dateStr);
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
-  return date >= start && date <= end;
-}
-
-// Fonction pour récupérer le bundleId via l'API iTunes
-function getBundleId(appId) {
+async function resolveIosBundleId(appId) {
+  const url = `https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}`;
   return new Promise((resolve, reject) => {
-    const url = `https://itunes.apple.com/lookup?id=${appId}`;
-    https.get(url, res => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
+    https.get(url, (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => {
         try {
           const json = JSON.parse(data);
-          if (json.results?.[0]?.bundleId) {
-            resolve(json.results[0].bundleId);
-          } else {
-            reject(`Impossible de trouver le bundleId pour l'App ID ${appId}`);
-          }
-        } catch (err) {
-          reject(`Erreur parsing iTunes pour l'App ID ${appId} : ${err}`);
+          const bundleId = json?.results?.[0]?.bundleId;
+          if (!bundleId) return reject(new Error("bundleId iOS introuvable"));
+          resolve(bundleId);
+        } catch (e) {
+          reject(e);
         }
       });
-    }).on('error', err => {
-      reject(`Erreur de connexion à l'API iTunes : ${err.message}`);
-    });
+    }).on("error", reject);
   });
 }
 
-
-// Fonction pour récupérer les avis iOS
-async function getIOSReviews(store, appName, appId, startDate, endDate) {
-  try {
-    if (!appId || appId === 'N/A') {
-      console.log(`Pas d'App ID iOS pour ${appName}, ignoré.`);
-      return [];
-    }
-
-    console.log(`\nRécupération des avis iOS pour ${appName} (App ID: ${appId})`);
-    console.log(`Période: du ${startDate} au ${endDate}`);
-
-    const bundleId = await getBundleId(appId);
-    console.log(`Bundle ID trouvé : ${bundleId}`);
-
-    let allReviews = [];
-    let currentPage = 1;
-    const MAX_PAGES = 10;
-    let hasMoreReviews = true;
-    let hasReviewsInRange = true;
-
-    while (hasMoreReviews && currentPage <= MAX_PAGES && hasReviewsInRange) {
-      console.log(`iOS : Page ${currentPage}/${MAX_PAGES}`);
-      try {
-        const reviews = await store.reviews({
-          appId: bundleId,
-          sort: store.sort.RECENT,
-          country: 'fr',
-          page: currentPage
-        });
-
-        if (reviews.length === 0) {
-          hasMoreReviews = false;
-        } else {
-          // Filtrer et normaliser les avis iOS
-          const filteredReviews = reviews
-            .filter(review => isDateInRange(review.updated, startDate, endDate))
-            .map(review => ({
-              app_name: appName,
-              platform: 'iOS',
-              date: review.updated,
-              rating: review.score,
-              text: review.text,
-              title: 'N/A',
-              user_name: review.userName,
-              app_version: review.version,
-              app_id: appId,
-              bundle_id: bundleId,
-              review_id: `ios_${bundleId}_${review.id || Date.now()}`,
-              reply_date: null,
-              reply_text: null
-            }));
-
-          // Si aucun avis de la page n'est dans la plage de dates, on arrête
-          if (filteredReviews.length === 0 && reviews[reviews.length - 1].updated < new Date(startDate)) {
-            hasReviewsInRange = false;
-            console.log('Plus d\'avis dans la plage de dates spécifiée.');
-          } else {
-            allReviews = allReviews.concat(filteredReviews);
-            currentPage++;
-            await new Promise(resolve => setTimeout(resolve, 1500));
-          }
-        }
-      } catch (error) {
-        console.error(`Erreur lors de la récupération de la page ${currentPage}:`, error);
-        hasMoreReviews = false;
-      }
-    }
-
-    console.log(`Total des avis iOS pour ${appName} dans la période: ${allReviews.length}`);
-    return allReviews;
-  } catch (error) {
-    console.error(`Erreur lors de la récupération des avis iOS pour ${appName}:`, error);
-    return [];
+async function resolveBundleId(platform, appId) {
+  if (String(platform).toLowerCase() === "ios") {
+    return resolveIosBundleId(appId);
   }
+  // Android : bundleId === packageName
+  return appId;
 }
 
-// Fonction pour récupérer les avis Android
-async function getAndroidReviews(gplay, appName, bundleId, startDate, endDate) {
-  try {
-    if (!bundleId || bundleId === 'N/A') {
-      console.log(`Pas de bundle ID Android pour ${appName}, ignoré.`);
-      return [];
-    }
+// ---------------------------------------------------------------------------
+// Scrapers (Android / iOS) — pagination + filtrage par fenêtre
+// On utilise les libs dynamiquement importées dans le handler.
+// ---------------------------------------------------------------------------
 
-    console.log(`\nRécupération des avis Android pour ${appName} (Bundle ID: ${bundleId})`);
-    console.log(`Période: du ${startDate} au ${endDate}`);
+async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
+  // appId = packageName (ex: "com.fortuneo.android")
+  const pageSize = 100;
+  let token = undefined;
+  let results = [];
+  let keepPaging = true;
 
-    let initialNum = 100;  // On commence plus petit pour tester
-    let maxNum = 10000;    // Limite maximale réduite
-    let currentNum = initialNum;
-    let allReviews = new Map(); // Utilisation d'une Map pour la déduplication
-    let hasReviewsInRange = true;
-    let targetStartDate = new Date(startDate);
+  while (keepPaging) {
+    const resp = await gplay.reviews({
+      appId,
+      sort: gplay.sort.NEWEST,
+      num: pageSize,
+      paginate: true,
+      nextPaginationToken: token,
+      lang: "fr",
+      country: "fr",
+    });
 
-    while (hasReviewsInRange && currentNum <= maxNum) {
-      console.log(`Android : Tentative de récupération avec num=${currentNum} avis...`);
+    const list = (resp?.data || []).map((r) => ({
+      app_name: appName,
+      platform: "android",
+      date: r?.date ? new Date(r.date).toISOString() : new Date().toISOString(),
+      rating: r?.score,
+      text: r?.text,
+      user_name: r?.userName,
+      app_version: r?.appVersion,
+      app_id: appId,
+      bundle_id: appId,
+      review_id: r?.reviewId || `${appId}_${r?.date?.getTime() || Date.now()}`,
+    }));
 
-      try {
-        const result = await gplay.reviews({
-          appId: bundleId,
-          sort: gplay.sort.NEWEST,
-          num: currentNum,
-          lang: 'fr',
-          country: 'fr'
-        });
-
-        if (!result.data || result.data.length === 0) {
-          console.log('Aucun avis disponible.');
-          break;
-        }
-
-        // Filtrer et normaliser les avis dans la plage de dates
-        result.data
-          .filter(review => isDateInRange(review.date, startDate, endDate))
-          .forEach(review => {
-            const reviewId = `android_${bundleId}_${review.id}`;
-            if (!allReviews.has(reviewId)) {
-              allReviews.set(reviewId, {
-                app_name: appName,
-                platform: 'Android',
-                date: review.date,
-                rating: review.score,
-                text: review.text,
-                title: review.title || 'N/A',
-                user_name: review.userName,
-                app_version: review.version || 'N/A',
-                app_id: bundleId,
-                bundle_id: bundleId,
-                review_id: reviewId,
-                reply_date: review.replyDate || null,
-                reply_text: review.replyText || null
-              });
-            }
-          });
-
-        // Vérifier la date du dernier avis récupéré
-        const oldestReviewDate = new Date(result.data[result.data.length - 1].date);
-        console.log(`Date du plus ancien avis récupéré: ${oldestReviewDate.toISOString()}`);
-        console.log(`Nombre d'avis dans la plage: ${allReviews.size}`);
-
-        // Vérifier si on a atteint la date de début
-        if (oldestReviewDate > targetStartDate && currentNum < maxNum) {
-          currentNum += 100; // Augmentation plus progressive
-          console.log('La plage de dates n\'est pas entièrement couverte, augmentation de num');
-          await new Promise(resolve => setTimeout(resolve, 1500));
-        } else {
-          hasReviewsInRange = false;
-          console.log('Fin de la récupération des avis Android');
-        }
-
-      } catch (error) {
-        console.error(`Erreur lors de la récupération des avis avec num=${currentNum}:`, error);
+    // Filtrer sur la fenêtre (et stopper si on est passé avant fromISO)
+    for (const it of list) {
+      if (isWithin(it.date, fromISO, toISO)) {
+        results.push(it);
+      } else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) {
+        // On est passé sous la borne — on peut arrêter la pagination
+        keepPaging = false;
         break;
       }
     }
 
-    const normalizedReviews = Array.from(allReviews.values());
-    console.log(`Total des avis Android pour ${appName} dans la période: ${normalizedReviews.length}`);
-    return normalizedReviews;
-
-  } catch (error) {
-    console.error(`Erreur lors de la récupération des avis Android pour ${appName}:`, error);
-    return [];
+    token = resp?.nextPaginationToken;
+    if (!token) break;
   }
+
+  return results;
 }
 
-// Fonction pour traiter une application
-async function processApp({ store, gplay, appName, platform, appId, fromDate, toDate }) {
-  console.log(`\nTraitement de ${appName} (${platform})`);
-  let allReviews = [];
+async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO }) {
+  // appId = identifiant numérique sur l'App Store
+  // bundleId = reverse-DNS (ex: "com.bank.app")
+  const pageSize = 100; // app-store-scraper renvoie par pages (taille interne)
+  let page = 0;
+  let results = [];
+  let keepPaging = true;
 
-  if (platform === "ios") {
-    allReviews = await getIOSReviews(store, appName, appId, fromDate, toDate);
-  } else if (platform === "android") {
-    allReviews = await getAndroidReviews(gplay, appName, appId, fromDate, toDate);
-  } else {
-    throw new Error("Plateforme inconnue : " + platform);
+  while (keepPaging) {
+    const resp = await store.reviews({
+      id: appId, // l'API accepte l'id numérique
+      sort: store.sort.RECENT,
+      page,
+      country: "fr",
+      lang: "fr",
+    });
+
+    const list = (resp || []).map((r) => ({
+      app_name: appName,
+      platform: "ios",
+      date: r?.date ? new Date(r.date).toISOString() : new Date().toISOString(),
+      rating: r?.score,
+      text: r?.text,
+      user_name: r?.userName,
+      app_version: r?.version,
+      app_id: appId,
+      bundle_id: bundleId,
+      review_id: String(r?.id ?? `${appId}_${page}_${Math.random().toString(36).slice(2)}`),
+    }));
+
+    // Filtrer sur la fenêtre + détection seuil
+    let sawOlder = false;
+    for (const it of list) {
+      if (isWithin(it.date, fromISO, toISO)) {
+        results.push(it);
+      } else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) {
+        sawOlder = true;
+      }
+    }
+
+    // Heuristique d'arrêt: si on a rencontré des dates < fromISO, on peut stopper
+    if (sawOlder || list.length === 0) break;
+
+    page += 1;
+    if (page > 50) break; // garde-fou
   }
 
-  if (allReviews.length === 0) return 0;
+  return results;
+}
 
-  allReviews.sort((a, b) => new Date(b.date) - new Date(a.date));
+// ---------------------------------------------------------------------------
+// Orchestration incrémentale : calcule fenêtre -> scrape -> insert
+// ---------------------------------------------------------------------------
 
-  // Enregistre les avis collectés
-  await processInBatches(allReviews, 15, async (r) => {
+async function runIncremental({ appName, platform, appId, backfillDays, gplay, store }) {
+  const platformL = String(platform).toLowerCase();
+  const bundleId = await resolveBundleId(platformL, appId);
+
+  // 1) Dernière review en base
+  const latest = await getLatestReviewItem(platformL, bundleId);
+  const { fromISO, toISO } = computeWindow(latest, backfillDays);
+  console.log(`[INC] ${platformL} ${bundleId} window: ${fromISO} → ${toISO}`);
+
+  // 2) Scrape
+  let fetched = [];
+  if (platformL === "android") {
+    fetched = await scrapeAndroidReviews({ gplay, appName, appId: bundleId, fromISO, toISO });
+  } else {
+    fetched = await scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO });
+  }
+
+  // 3) Insertions idempotentes (tri par date croissante pour la cohérence)
+  const toInsert = (fetched || []).sort((a, b) => new Date(a.date) - new Date(b.date));
+  let ok = 0, dup = 0, ko = 0;
+
+  await processInBatches(toInsert, 15, async (r) => {
     try {
       await saveReviewToDDB(r);
+      ok++;
     } catch (e) {
-      // On ignore l'erreur "ConditionalCheckFailed" (doublon), on loggue le reste
-      if (e?.name !== "ConditionalCheckFailedException") {
-        console.error("Erreur DDB save:", e?.message || e);
-      }
+      if (e?.name === "ConditionalCheckFailedException") dup++;
+      else { ko++; console.error("saveReviewToDDB error:", e?.message || e); }
     }
   });
 
-  const fields = [
-    'app_name',
-    'platform',
-    'date',
-    'rating',
-    'text',
-    'title',
-    'user_name',
-    'app_version',
-    'app_id',
-    'bundle_id',
-    'review_id',
-    'reply_date',
-    'reply_text'
-  ];
-
-  const parser = new Parser({ fields });
-  return parser.parse(allReviews);
+  console.log(`[INC] inserted=${ok} dups=${dup} errors=${ko}`);
+  return { inserted: ok, duplicates: dup, errors: ko, totalFetched: fetched.length };
 }
+
+// ---------------------------------------------------------------------------
+// Handler SQS — route messages "incremental"
+// ---------------------------------------------------------------------------
+
+exports.handler = async (event) => {
+  // Import dynamique des libs de scraping (garde le cold start raisonnable)
+  const { default: gplay } = await import("google-play-scraper");
+  const { default: store } = await import("app-store-scraper");
+
+  for (const record of event.Records || []) {
+    let message = null;
+    try {
+      message = JSON.parse(record.body || "{}");
+    } catch {
+      console.error("Message SQS invalide:", record.body);
+      continue;
+    }
+
+    const { appName, platform, appId, backfillDays } = message || {};
+    if (!appName || !platform || !appId) {
+      console.error("Message incomplet, ignoré:", message);
+      continue;
+    }
+
+    try {
+      const stats = await runIncremental({ appName, platform, appId, backfillDays, gplay, store });
+      console.log("[INC] Résultat:", stats);
+    } catch (error) {
+      console.error("Erreur dans le worker (message):", error);
+      // Pas de mise à jour d'une table d'extraction ici : ce worker est désormais "DB-first"
+    }
+  }
+};
