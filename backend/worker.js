@@ -279,19 +279,28 @@ async function runIncremental({ appName, platform, appId, backfillDays, gplay, s
   const bundleId = await resolveBundleId(plat, appId);
 
   const latest = await getLatestReviewItem(plat, bundleId);
-  const { fromISO, toISO, reason } = computeWindow(latest, backfillDays);
-  console.log(`[INC] app=${appName} plat=${plat} bundle=${bundleId} reason=${reason} window=${fromISO}→${toISO}`);
+  const { fromISO, toISO, reason, effectiveBackfillDays } = computeWindow(latest, backfillDays);
+
+  console.log(`[INC] app=${appName} plat=${plat} bundle=${bundleId} reason=${reason} backfillDays=${effectiveBackfillDays} window=${fromISO}→${toISO} latest=${latest ? latest.date : "none"}`);
 
   let fetched = [];
   if (plat === "android") fetched = await scrapeAndroidReviews({ gplay, appName, appId: bundleId, fromISO, toISO });
   else fetched = await scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO });
 
-  // tri ascendant (cohérence), dédup locale (rare)
+  // tri ascendant (cohérence)
   const ordered = (fetched || []).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  // GARDE-FOU FINAL: rien hors fenêtre ne part en DDB
+  const toInsert = ordered.filter(it => isWithin(it.date, fromISO, toISO));
+  const minDt = toInsert.length ? toInsert[0].date : null;
+  const maxDt = toInsert.length ? toInsert[toInsert.length - 1].date : null;
+  console.log(`[INC] after-filter count=${toInsert.length} min=${minDt} max=${maxDt}`);
+
+  // écriture
   const cache = new Set();
   let ok = 0, dup = 0, ko = 0;
 
-  await processInBatches(ordered, 15, async (r) => {
+  await processInBatches(toInsert, 15, async (r) => {
     try { await saveReviewToDDB(r, { cache }); ok++; }
     catch (e) {
       if (e?.name === "ConditionalCheckFailedException") dup++;
@@ -299,8 +308,8 @@ async function runIncremental({ appName, platform, appId, backfillDays, gplay, s
     }
   });
 
-  console.log(`[INC] fetched=${fetched.length} inserted=${ok} ddbDups=${dup} errors=${ko}`);
-  return { fetched: fetched.length, inserted: ok, ddbDups: dup, errors: ko };
+  console.log(`[INC] fetched=${fetched.length} sent=${toInsert.length} inserted=${ok} ddbDups=${dup} errors=${ko}`);
+  return { fetched: fetched.length, sent: toInsert.length, inserted: ok, ddbDups: dup, errors: ko };
 }
 
 // ---------- Handler ----------
