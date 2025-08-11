@@ -146,6 +146,27 @@ async function processInBatches(items, size, fn) {
   }
 }
 
+// hash déterministe (FNV-1a) pour fallback d'ID
+function hashFNV1a(str = "") {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(36);
+}
+
+function buildReviewId({ platform, bundleId, storeId, dateISO, text, user_name }) {
+  const p = String(platform).toLowerCase();
+  const prefix = `${p}_${bundleId}_`;
+  if (storeId) return prefix + String(storeId);
+
+  const ts = Number.isFinite(Date.parse(dateISO)) ? Date.parse(dateISO) : Date.now();
+  const sigBase = `${(text || "").trim().slice(0, 200)}|${(user_name || "").trim().toLowerCase()}`;
+  const sig = hashFNV1a(sigBase);
+  return `${prefix}${ts}_${sig}`;
+}
+
 // ---------------------------------------------------------------------------
 // iOS : resolve bundleId via iTunes Lookup si besoin
 // ---------------------------------------------------------------------------
@@ -210,8 +231,14 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
 
     const list = (resp?.data || []).map((r) => {
       const dateISO = toISODate(r?.date);
-      // review_id: privilégie l'ID fourni, sinon fallback stable basé sur timestamp
-      const rid = r?.reviewId || `${appId}_${toMillis(r?.date)}`;
+      const rid = buildReviewId({
+        platform: "android",
+        bundleId: appId,
+        storeId: r?.reviewId,                // prioritaire si présent
+        dateISO: dateISO,                    // sinon fallback
+        text: r?.text,
+        user_name: r?.userName
+      });
 
       return {
         app_name: appName,
@@ -223,7 +250,7 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
         app_version: r?.appVersion ?? "",
         app_id: appId,
         bundle_id: appId,
-        review_id: String(rid),
+        review_id: rid,
       };
     });
 
@@ -300,6 +327,15 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
       const t = new Date(dateISO).getTime();
 
       if (t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime()) {
+        const rid = buildReviewId({
+          platform: "ios",
+          bundleId: bundleId,
+          storeId: r?.id,                      // prioritaire si présent
+          dateISO,
+          text: r?.text,
+          user_name: r?.userName
+        });
+
         results.push({
           app_name: appName,
           platform: "ios",
@@ -310,7 +346,7 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
           app_version: r?.version ?? "",
           app_id: appId,        // id numérique
           bundle_id: bundleId,  // reverse-DNS
-          review_id: String(r?.id ?? `${appId}_${page}_${t}`),
+          review_id: rid,
         });
       } else if (t < new Date(fromISO).getTime()) {
         sawOlder = true; // on est passé sous la fenêtre; pages suivantes seront encore plus anciennes
