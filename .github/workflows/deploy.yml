@@ -14,12 +14,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Detect changed paths
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            backend:
+              - 'backend/**'
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      - name: Install dependencies
+      - name: Install dependencies (backend)
         run: npm install
         working-directory: backend
 
@@ -69,6 +79,7 @@ jobs:
             --region eu-west-3
 
       - name: Build frontend
+        if: steps.changes.outputs.frontend == 'true'
         run: |
           npm install --legacy-peer-deps
           npm run build
@@ -79,6 +90,7 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
       - name: Deploy frontend to S3
+        if: steps.changes.outputs.frontend == 'true'
         run: |
           aws s3 sync ./dist s3://revox-frontend --region eu-west-3 --delete
         working-directory: frontend
