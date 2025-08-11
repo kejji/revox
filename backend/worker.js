@@ -30,6 +30,10 @@ const ddbDoc = DynamoDBDocumentClient.from(
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
+// Paramétres pour la fenêtre de scraping
+const MAX_BACKFILL_DAYS = 30;
+const FIRST_RUN_DAYS = 30;
+
 // ---------------------------------------------------------------------------
 // Normalisation + écriture DDB (idempotente)
 // ---------------------------------------------------------------------------
@@ -101,18 +105,33 @@ async function getLatestReviewItem(platform, bundleId) {
   return (out.Items && out.Items[0]) || null;
 }
 
-function computeWindow(latestItem, backfillDays = 1) {
-  const toISO = new Date().toISOString();
+function normalizeBackfillDays(v, def = 2) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(Math.max(0, Math.floor(n)), MAX_BACKFILL_DAYS);
+}
+
+function computeWindow(latestItem, backfillDaysRaw) {
+  const backfillDays = normalizeBackfillDays(backfillDaysRaw, 2);
+  const to = new Date();
+
   if (!latestItem) {
-    // Premier run : remonte large (30 jours) — ajuste au besoin
-    const from = new Date();
-    from.setUTCDate(from.getUTCDate() - 30);
-    return { fromISO: from.toISOString(), toISO };
+    // Premier run : on récupère un historique raisonnable (configurable)
+    const from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - FIRST_RUN_DAYS);
+    return { fromISO: from.toISOString(), toISO: to.toISOString(), reason: "first-run" };
   }
-  const last = new Date(latestItem.date);
-  // Petit backfill (= on repart 1–2 jours en arrière pour éviter les trous)
-  last.setUTCDate(last.getUTCDate() - Math.max(0, Number(backfillDays) || 1));
-  return { fromISO: last.toISOString(), toISO };
+
+  // On repart depuis la dernière date connue - backfillDays
+  const from = new Date(latestItem.date);
+  from.setUTCDate(from.getUTCDate() - backfillDays);
+
+  // Protection horloge (si last > now suite à skew)
+  if (from.getTime() > to.getTime()) {
+    from.setTime(to.getTime());
+  }
+
+  return { fromISO: from.toISOString(), toISO: to.toISOString(), reason: "incremental" };
 }
 
 function isWithin(dateISO, fromISO, toISO) {
@@ -315,12 +334,11 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
 async function runIncremental({ appName, platform, appId, backfillDays, gplay, store }) {
   const platformL = String(platform).toLowerCase();
   const bundleId = await resolveBundleId(platformL, appId);
-
   // 1) Dernière review en base
   const latest = await getLatestReviewItem(platformL, bundleId);
-  const { fromISO, toISO } = computeWindow(latest, backfillDays);
-  console.log(`[INC] ${platformL} ${bundleId} window: ${fromISO} → ${toISO}`);
-
+  const { fromISO, toISO, reason } = computeWindow(latest, backfillDays);
+  console.log(`[INC] app=${appName} plat=${platformL} bundle=${bundleId} ` +
+    `reason=${reason} window=${fromISO} → ${toISO} (backfillDays=${normalizeBackfillDays(backfillDays, 2)})`);
   // 2) Scrape
   let fetched = [];
   if (platformL === "android") {
