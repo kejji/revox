@@ -4,6 +4,7 @@ import cors from "cors";
 import decodeJwtSub from "./auth.js";
 import { createExtraction, getExtractionStatus, downloadExtraction } from "./extract.js";
 import { searchApp } from "./searchApp.js";
+import { listReviews } from "./reviews.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -35,6 +36,11 @@ app.get("/extract/:id/download", (req, res) => {
 });
 
 app.get("/search-app", searchApp);
+
+app.get("/reviews", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  listReviews(req, res);
+});
 
 export default app;
 
