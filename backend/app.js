@@ -2,7 +2,6 @@
 import express from "express";
 import cors from "cors";
 import decodeJwtSub from "./auth.js";
-import { createExtraction, getExtractionStatus, downloadExtraction } from "./extract.js";
 import { searchApp } from "./searchApp.js";
 import { listReviews } from "./reviews.js";
 import { exportReviewsCsv } from "./reviewsExport.js";
