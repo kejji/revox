@@ -55,6 +55,11 @@ resource "aws_cognito_user_pool" "revox_user_pool" {
   }
 
   auto_verified_attributes = ["email"]
+
+  lambda_config {
+    post_confirmation = aws_lambda_function.user_sync.arn
+  }
+
 }
 
 # 2. Création du client web (sans secret)
@@ -71,6 +76,15 @@ resource "aws_cognito_user_pool_client" "revox_app_client" {
 
   callback_urls = ["http://localhost:3000/"]
   logout_urls   = ["http://localhost:3000/"]
+}
+
+# 3. Autoriser Cognito à invoquer la Lambda
+resource "aws_lambda_permission" "allow_cognito_postconf" {
+  statement_id  = "AllowExecutionFromCognitoPostConfirmation"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.user_sync.function_name
+  principal     = "cognito-idp.amazonaws.com"
+  source_arn    = aws_cognito_user_pool.revox_user_pool.arn
 }
 
 ########################################
@@ -101,12 +115,6 @@ resource "aws_dynamodb_table" "users" {
     name = "id"
     type = "S"
   }
-
-  # TTL (optionnel)
-  # ttl {
-  #   attribute_name = "ttl"
-  #   enabled        = false
-  # }
 }
 
 ########################################
@@ -133,6 +141,38 @@ resource "aws_dynamodb_table" "app_reviews" {
   }
 }
 
+########################################
+# Table DynamoDB : USER_FOLLOWS
+########################################
+
+resource "aws_dynamodb_table" "user_follows" {
+  name         = "revox_user_follows"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "user_id"
+  range_key    = "app_pk"
+
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "app_pk"
+    type = "S"
+  }
+
+  # (Optionnel) GSI pour compter les followers par app
+  global_secondary_index {
+    name            = "GSI1"
+    hash_key        = "app_pk"
+    range_key       = "user_id"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "Revox User Follows"
+  }
+}
 
 ########################################
 # SQS : file pour orchestrer les extractions
@@ -141,6 +181,13 @@ resource "aws_sqs_queue" "extraction_queue" {
   name                       = "revox-extraction-queue"
   visibility_timeout_seconds = 300   # 5 min pour traiter chaque message
   message_retention_seconds  = 86400 # conserve 24 h
+}
+
+# Liaison SQS -> Lambda worker
+resource "aws_lambda_event_source_mapping" "worker_sqs" {
+  event_source_arn = aws_sqs_queue.extraction_queue.arn
+  function_name    = aws_lambda_function.worker.arn
+  batch_size       = 1
 }
 
 ########################################
@@ -260,7 +307,7 @@ resource "aws_lambda_function" "worker" {
   handler          = "worker.handler"
   runtime          = "nodejs18.x"
   timeout          = 300
-  filename         = "${path.module}/dummy.zip" # remplace plus tard par un vrai zip
+  filename         = "${path.module}/dummy.zip"
   source_code_hash = filebase64sha256("${path.module}/dummy.zip")
 
   environment {
@@ -277,12 +324,33 @@ resource "aws_lambda_function" "worker" {
   }
 }
 
-# Liaison SQS -> Lambda worker
-resource "aws_lambda_event_source_mapping" "worker_sqs" {
-  event_source_arn = aws_sqs_queue.extraction_queue.arn
-  function_name    = aws_lambda_function.worker.arn
-  batch_size       = 1
+########################################
+#  Ressource gérant la lambda user_sync
+########################################
+resource "aws_lambda_function" "user_sync" {
+  function_name    = "revox-user-sync"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "userSync.handler"
+  runtime          = "nodejs18.x"
+  timeout          = 10
+  filename         = "${path.module}/dummy.zip"
+  source_code_hash = filebase64sha256("${path.module}/dummy.zip")
+
+  environment {
+    variables = {
+      REVOX_USERS_TABLE = aws_dynamodb_table.users.name
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      filename,
+      source_code_hash,
+    ]
+  }
 }
+
+
 
 
 ########################################

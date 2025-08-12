@@ -29,3 +29,11 @@ output "function_url" {
   description = "URL directe de la Lambda pour debug"
   value       = trimspace(aws_lambda_function_url.api_url.function_url)
 }
+
+output "user_follows_table_name" {
+  value = trimspace(aws_dynamodb_table.user_follows.name)
+}
+
+output "revox_users_table_name" {
+  value = trimspace(aws_dynamodb_table.users.name)
+}
