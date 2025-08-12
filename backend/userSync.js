@@ -55,7 +55,7 @@ exports.handler = async (event) => {
     await ddb.send(new PutCommand({
       TableName: USERS_TABLE,
       Item: {
-        key,
+        ...key,
         email: attrs.email || undefined,
         family_name: extractFamilyName(attrs),
         given_name: extractGivenName(attrs),
