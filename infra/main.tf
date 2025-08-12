@@ -128,20 +128,6 @@ resource "aws_dynamodb_table" "app_reviews" {
     type = "S"
   }
 
-  # GSI pour lookup/anti‑doublon rapide par review_id
-  global_secondary_index {
-    name            = "by_review_id"
-    hash_key        = "review_id"
-    range_key       = "app_pk"
-    projection_type = "ALL"
-  }
-
-  # Attribut déclaré pour la GSI
-  attribute {
-    name = "review_id"
-    type = "S"
-  }
-
   tags = {
     Name = "Revox App Reviews"
   }
