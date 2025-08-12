@@ -159,7 +159,8 @@ async function resolveIosBundleId(appId) {
       res.on("end", () => {
         try {
           const json = JSON.parse(data);
-          const bundleId = json?.results?.[0]?.bundleId;
+          //const bundleId = json?.results?.[0]?.bundleId;
+          const bundleId = "net.bnpparibas.hellobankiphone";
           if (!bundleId) return reject(new Error("bundleId iOS introuvable"));
           resolve(bundleId);
         } catch (e) { reject(e); }
