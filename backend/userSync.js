@@ -1,4 +1,4 @@
-// backend/user-sync.js
+// backend/userSync.js
 // Lambda Cognito PostConfirmation -> crée l'utilisateur dans DynamoDB `RevoxUsers`
 // Ne s'exécute qu'au moment "PostConfirmation_ConfirmSignUp" (une seule fois par user)
 
@@ -13,50 +13,62 @@ const ddb = DynamoDBDocumentClient.from(
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
-function extractName(attrs) {
-  const gn = (attrs.given_name || "").trim();
-  const fn = (attrs.family_name || "").trim();
-  const full = [gn, fn].filter(Boolean).join(" ");
-  return full || (attrs.name || undefined);
+function extractFamilyName(attrs) {
+  return (attrs.family_name || "").trim() || undefined;
+}
+
+function extractGivenName(attrs) {
+  return (attrs.given_name || "").trim() || undefined;
 }
 
 exports.handler = async (event) => {
   try {
-    if (!USERS_TABLE) return event;
-
+    if (!USERS_TABLE) {
+      console.warn("user-sync: USERS_TABLE is not set");
+      return event;
+    }
     // Exécuter UNIQUEMENT lors de la confirmation de sign-up
     if (event?.triggerSource !== "PostConfirmation_ConfirmSignUp") {
+      console.log("user-sync: skipped triggerSource =", event?.triggerSource);
       return event;
     }
 
     const attrs = event?.request?.userAttributes || {};
-    const user_id = attrs.sub;
-    if (!user_id) return event;
-
+    const sub = attrs.sub;
+    if (!sub) {
+      console.error("user-sync: missing sub in userAttributes");
+      return event;
+    }
+    const key = { id: String(sub) };
+    console.log("user-sync: processing", { table: USERS_TABLE, key, email: attrs.email });
     // 1) Vérifie si l'utilisateur existe déjà (lecture seule)
     const got = await ddb.send(new GetCommand({
       TableName: USERS_TABLE,
-      Key: { user_id }
+      Key: key
     }));
-    if (got.Item) return event; // déjà présent -> on ne fait rien
-
+    if (got.Item) {
+      console.log("user-sync: already exists");
+      return event;
+    }
     // 2) Crée l'utilisateur (une seule fois)
     const now = new Date().toISOString();
     await ddb.send(new PutCommand({
       TableName: USERS_TABLE,
       Item: {
-        user_id,
-        email: attrs.email,
-        name: extractName(attrs),
+        key,
+        email: attrs.email || undefined,
+        family_name: extractFamilyName(attrs),
+        given_name: extractGivenName(attrs),
         created_at: now,
-        last_seen_at: now,
         plan: "free",
         status: "active",
-      }
+      },
+      // évite les doublons en cas de retry
+      ConditionExpression: "attribute_not_exists(id)"
     }));
+    console.log("user-sync: put ok");
   } catch (e) {
     console.error("user-sync error:", e?.message || e);
-    // On ne bloque jamais la confirmation Cognito
   }
   return event;
 };
