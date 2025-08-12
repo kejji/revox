@@ -20,7 +20,7 @@ console.log("EXTRACTIONS_TABLE =", TABLE_NAME);
 
 export async function createExtraction(req, res) {
   try {
-    const { appName, appId, platform, fromDate, toDate } = req.body;
+    const { appName, bundleId, platform, fromDate, toDate } = req.body;
     const userId      = req.auth.sub;           // récupéré par express-jwt
     const extractionId = uuidv4();
     const nowISO      = new Date().toISOString();
@@ -33,7 +33,7 @@ export async function createExtraction(req, res) {
         extraction_id: { S: extractionId },
         app_name:      { S: appName },
         platform:      { S: platform },
-        app_id:        { S: appId },
+        app_id:        { S: bundleId },
         from_date:     { S: fromDate },
         to_date:       { S: toDate },
         status:        { S: "pending" },
@@ -42,7 +42,7 @@ export async function createExtraction(req, res) {
       }
     }));
 
-    console.log("Envoi SQS avec :", { platform, appId });
+    console.log("Envoi SQS avec :", { platform, bundleId });
     // 2. Publier le message dans SQS
     await sqs.send(new SendMessageCommand({
       QueueUrl:    QUEUE_URL,
@@ -51,7 +51,7 @@ export async function createExtraction(req, res) {
         extractionId,
         appName,
         platform,
-        appId,
+        bundleId,
         fromDate,
         toDate
       })
@@ -141,15 +141,15 @@ export async function downloadExtraction(req, res) {
 
 // --- Dispatcher pour l’ingestion incrémentale vers APP_REVIEWS ---
 // Objectif: pousser un message SQS compris par le worker "incremental"
-// Corps attendu (POST): { appName, platform, appId, backfillDays? }
+// Corps attendu (POST): { appName, platform, bundleId, backfillDays? }
 
 export async function dispatchIncrementalIngest(req, res) {
   try {
-    const { appName, platform, appId, backfillDays } = req.body || {};
+    const { appName, platform, bundleId, backfillDays } = req.body || {};
 
-    if (!appName || !platform || !appId) {
+    if (!appName || !platform || !bundleId) {
       return res.status(400).json({
-        error: "appName, platform et appId sont requis"
+        error: "appName, platform et bundleId sont requis"
       });
     }
 
@@ -157,7 +157,7 @@ export async function dispatchIncrementalIngest(req, res) {
       mode: "incremental",
       appName: String(appName),
       platform: String(platform).toLowerCase(),       // "android" | "ios"
-      appId: String(appId),
+      bundleId: String(bundleId),
       backfillDays: Number.isFinite(Number(backfillDays)) ? Number(backfillDays) : 2
     };
 

@@ -1,25 +1,19 @@
 // worker.js — Ingestion simple & idempotente de reviews vers DynamoDB
 // -------------------------------------------------------------------
-// SQS message attendu: { appName, platform: "android"|"ios", appId, backfillDays? }
+// SQS message attendu: { appName, platform: "android"|"ios", bundleId, backfillDays? }
 //
 // ENV requises:
 //   - AWS_REGION
 //   - APP_REVIEWS_TABLE
-//
-// Idempotence sans lecture: PK = platform#bundleId, SK = dateISO#sig(date,text,user)
-// -> Même review => même SK => Put conditionnel refuse toute réinsertion.
-//
 // -------------------------------------------------------------------
 
-const https = require("https");
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
 
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION || "eu-west-3";
 const TABLE  = process.env.APP_REVIEWS_TABLE;
-
-const FIRST_RUN_DAYS   = 150; // fenêtre au premier run
+const FIRST_RUN_DAYS = 150;
 const MAX_BACKFILL_DAYS = 30;
 
 // ---------- Clients ----------
@@ -29,34 +23,16 @@ const ddbDoc = DynamoDBDocumentClient.from(
 );
 
 // ---------- Utils ----------
-const toMillis = (v) => {
-  if (v instanceof Date) return v.getTime();
-  const t = typeof v === "number" ? v : Date.parse(v);
-  return Number.isFinite(t) ? t : Date.now();
-};
+const toMillis = (v) => (v instanceof Date) ? v.getTime() : (Number.isFinite(+v) ? +v : Date.parse(v));
 const toISODate = (v) => new Date(toMillis(v)).toISOString();
 const norm = (s) => (s ?? "").toString().trim().toLowerCase();
-
-// petit hash stable (FNV-1a)
-function hashFNV1a(str = "") {
-  let h = 0x811c9dc5 >>> 0;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  return h.toString(36);
-}
-
-// signature anti-doublon (sans lecture, sans GSI)
+function hashFNV1a(str = "") { let h = 0x811c9dc5>>>0; for (let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0;} return h.toString(36); }
 const sig3 = (dateISO, text, user) => hashFNV1a(`${dateISO}#${norm(text)}#${norm(user)}`);
-
 const appPk = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
-
 const isWithin = (dateISO, fromISO, toISO) => {
   const t = new Date(dateISO).getTime();
   return t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime();
 };
-
 const processInBatches = async (items, size, fn) => {
   for (let i = 0; i < items.length; i += size) {
     const slice = items.slice(i, i + size);
@@ -70,7 +46,6 @@ function normalizeBackfillDays(v, def = 2) {
   if (!Number.isFinite(n)) return def;
   return Math.min(Math.max(0, Math.floor(n)), MAX_BACKFILL_DAYS);
 }
-
 async function getLatestReviewItem(platform, bundleId) {
   const out = await ddbDoc.send(new QueryCommand({
     TableName: TABLE,
@@ -81,20 +56,17 @@ async function getLatestReviewItem(platform, bundleId) {
   }));
   return (out.Items && out.Items[0]) || null;
 }
-
 function computeWindow(latestItem, backfillDaysRaw) {
   const backfillDays = normalizeBackfillDays(backfillDaysRaw, 2);
   const now = new Date();
-
   if (!latestItem) {
-    const from = new Date(now);
-    from.setUTCDate(from.getUTCDate() - FIRST_RUN_DAYS);
-    return { fromISO: from.toISOString(), toISO: now.toISOString(), reason: "first-run" };
+    const from = new Date(now); from.setUTCDate(from.getUTCDate() - FIRST_RUN_DAYS);
+    return { fromISO: from.toISOString(), toISO: now.toISOString(), reason: "first-run", effectiveBackfillDays: FIRST_RUN_DAYS };
   }
   const from = new Date(latestItem.date);
   from.setUTCDate(from.getUTCDate() - backfillDays);
   if (from.getTime() > now.getTime()) from.setTime(now.getTime());
-  return { fromISO: from.toISOString(), toISO: now.toISOString(), reason: "incremental" };
+  return { fromISO: from.toISOString(), toISO: now.toISOString(), reason: "incremental", effectiveBackfillDays: backfillDays };
 }
 
 // ---------- Normalisation + écriture ----------
@@ -107,14 +79,12 @@ function toDdbItem(raw) {
     text: raw.text,
     user_name: raw.user_name,
     app_version: raw.app_version,
-    app_id: raw.app_id,
+    app_id: raw.app_id,                 // Android = bundleId, iOS = facultatif
     bundle_id: raw.bundle_id || raw.app_id,
-    review_id: raw.review_id != null ? String(raw.review_id) : undefined, // informatif
+    review_id: raw.review_id != null ? String(raw.review_id) : undefined,
   };
-
   const pk = appPk(rv.platform, rv.bundle_id);
   const sk = `${rv.date}#${sig3(rv.date, rv.text, rv.user_name)}`;
-
   return {
     app_pk: pk,
     ts_review: sk,
@@ -132,54 +102,25 @@ function toDdbItem(raw) {
     source: "store-scraper-v1",
   };
 }
-
 async function saveReviewToDDB(raw, { cache }) {
   const item = toDdbItem(raw);
-
-  // dédup locale (ultra cheap)
-  const cacheKey = item.ts_review; // clé réelle d’unicité
+  const cacheKey = item.ts_review;
   if (cache && cache.has(cacheKey)) return;
-
   await ddbDoc.send(new PutCommand({
     TableName: TABLE,
     Item: item,
     ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)"
   }));
-
   cache && cache.add(cacheKey);
 }
 
-// ---------- Résolution bundleId ----------
-async function resolveIosBundleId(appId) {
-  const url = `https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}`;
-  return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-      let data = "";
-      res.on("data", (c) => (data += c));
-      res.on("end", () => {
-        try {
-          const json = JSON.parse(data);
-          const bundleId = json?.results?.[0]?.bundleId;
-          if (!bundleId) return reject(new Error("bundleId iOS introuvable"));
-          resolve(bundleId);
-        } catch (e) { reject(e); }
-      });
-    }).on("error", reject);
-  });
-}
-async function resolveBundleId(platform, appId) {
-  return (String(platform).toLowerCase() === "ios") ? resolveIosBundleId(appId) : appId;
-}
-
 // ---------- Scrapers ----------
-async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
+async function scrapeAndroidReviews({ gplay, appName, bundleId, fromISO, toISO }) {
   const pageSize = 100;
-  let token;
-  const out = [];
-
+  let token, out = [];
   while (true) {
     const resp = await gplay.reviews({
-      appId,
+      appId: bundleId,
       sort: gplay.sort.NEWEST,
       num: pageSize,
       paginate: true,
@@ -187,8 +128,7 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
       lang: "fr",
       country: "fr",
     });
-
-    const mapped = (resp?.data || []).map((r) => ({
+    const mapped = (resp?.data || []).map(r => ({
       app_name: appName,
       platform: "android",
       date: toISODate(r?.date),
@@ -196,57 +136,42 @@ async function scrapeAndroidReviews({ gplay, appName, appId, fromISO, toISO }) {
       text: r?.text,
       user_name: r?.userName ?? "",
       app_version: r?.appVersion ?? "",
-      app_id: appId,
-      bundle_id: appId,
-      review_id: r?.reviewId ? `android_${appId}_${r.reviewId}` : undefined, // info only
+      app_id: bundleId,
+      bundle_id: bundleId,
+      review_id: r?.reviewId ? `android_${bundleId}_${r.reviewId}` : undefined,
     }));
-
-    // filtre fenêtre + arrêt quand on passe sous fromISO
     let passedFrom = false;
     for (const it of mapped) {
       if (isWithin(it.date, fromISO, toISO)) out.push(it);
-      else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) { passedFrom = true; }
+      else if (new Date(it.date) < new Date(fromISO)) passedFrom = true;
     }
     if (passedFrom) break;
-
     token = resp?.nextPaginationToken;
     if (!token) break;
   }
-
   return out;
 }
 
-async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO }) {
+async function scrapeIosReviews({ store, appName, bundleId, fromISO, toISO }) {
   const MAX_PAGES = 10;
-  let page = 1;
-  const out = [];
-  let useBundleParam = false;
-
+  let page = 1, out = [];
   while (page <= MAX_PAGES) {
-    const args = {
-      sort: store.sort.RECENT,
-      page,
-      country: "fr",
-      lang: "fr",
-      ...(useBundleParam ? { appId: bundleId } : { id: appId }),
-    };
-
     let resp = [];
     try {
-      resp = await store.reviews(args);
+      resp = await store.reviews({
+        appId: bundleId,           // on passe TOUJOURS le bundleId ici
+        sort: store.sort.RECENT,
+        page,
+        country: "fr",
+        lang: "fr",
+      });
     } catch (e) {
-      if (page === 1 && !useBundleParam) { useBundleParam = true; continue; }
       console.error(`[iOS] page=${page} error:`, e?.message || e);
       break;
     }
+    if (!Array.isArray(resp) || resp.length === 0) break;
 
-    if (!Array.isArray(resp) || resp.length === 0) {
-      if (page === 1 && !useBundleParam) { useBundleParam = true; continue; }
-      break;
-    }
-
-    // map
-    const mapped = resp.map((r) => ({
+    const mapped = resp.map(r => ({
       app_name: appName,
       platform: "ios",
       date: toISODate(r?.updated ?? r?.date),
@@ -254,60 +179,43 @@ async function scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toIS
       text: r?.text,
       user_name: r?.userName ?? "",
       app_version: r?.version ?? "",
-      app_id: appId,       // id numérique
-      bundle_id: bundleId, // reverse-DNS
-      review_id: r?.id ? `ios_${bundleId}_${r.id}` : undefined, // info only
+      // app_id absent (numérique inconnu), c'est volontaire
+      bundle_id: bundleId,
+      review_id: r?.id ? `ios_${bundleId}_${r.id}` : undefined,
     }));
-
-    // filtre fenêtre + arrêt si on passe sous fromISO
     let passedFrom = false;
     for (const it of mapped) {
       if (isWithin(it.date, fromISO, toISO)) out.push(it);
-      else if (new Date(it.date).getTime() < new Date(fromISO).getTime()) { passedFrom = true; }
+      else if (new Date(it.date) < new Date(fromISO)) passedFrom = true;
     }
     if (passedFrom) break;
-
     page += 1;
   }
-
   return out;
 }
 
 // ---------- Orchestration ----------
-async function runIncremental({ appName, platform, appId, backfillDays, gplay, store }) {
+async function runIncremental({ appName, platform, bundleId, backfillDays, gplay, store }) {
   const plat = String(platform).toLowerCase();
-  const bundleId = await resolveBundleId(plat, appId);
 
   const latest = await getLatestReviewItem(plat, bundleId);
   const { fromISO, toISO, reason, effectiveBackfillDays } = computeWindow(latest, backfillDays);
-
   console.log(`[INC] app=${appName} plat=${plat} bundle=${bundleId} reason=${reason} backfillDays=${effectiveBackfillDays} window=${fromISO}→${toISO} latest=${latest ? latest.date : "none"}`);
 
-  let fetched = [];
-  if (plat === "android") fetched = await scrapeAndroidReviews({ gplay, appName, appId: bundleId, fromISO, toISO });
-  else fetched = await scrapeIosReviews({ store, appName, appId, bundleId, fromISO, toISO });
+  const fetched = plat === "android"
+    ? await scrapeAndroidReviews({ gplay, appName, bundleId, fromISO, toISO })
+    : await scrapeIosReviews({ store, appName, bundleId, fromISO, toISO });
 
-  // tri ascendant (cohérence)
   const ordered = (fetched || []).sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  // GARDE-FOU FINAL: rien hors fenêtre ne part en DDB
   const toInsert = ordered.filter(it => isWithin(it.date, fromISO, toISO));
-  const minDt = toInsert.length ? toInsert[0].date : null;
-  const maxDt = toInsert.length ? toInsert[toInsert.length - 1].date : null;
-  console.log(`[INC] after-filter count=${toInsert.length} min=${minDt} max=${maxDt}`);
+  console.log(`[INC] after-filter count=${toInsert.length} min=${toInsert[0]?.date || null} max=${toInsert.at(-1)?.date || null}`);
 
-  // écriture
   const cache = new Set();
   let ok = 0, dup = 0, ko = 0;
-
   await processInBatches(toInsert, 15, async (r) => {
     try { await saveReviewToDDB(r, { cache }); ok++; }
-    catch (e) {
-      if (e?.name === "ConditionalCheckFailedException") dup++;
-      else { ko++; console.error("Put error:", e?.message || e); }
-    }
+    catch (e) { if (e?.name === "ConditionalCheckFailedException") dup++; else { ko++; console.error("Put error:", e?.message || e); } }
   });
-
   console.log(`[INC] fetched=${fetched.length} sent=${toInsert.length} inserted=${ok} ddbDups=${dup} errors=${ko}`);
   return { fetched: fetched.length, sent: toInsert.length, inserted: ok, ddbDups: dup, errors: ko };
 }
@@ -322,11 +230,11 @@ exports.handler = async (event) => {
     try { msg = JSON.parse(rec.body || "{}"); }
     catch { console.error("SQS message invalide:", rec.body); continue; }
 
-    const { appName, platform, appId, backfillDays } = msg || {};
-    if (!appName || !platform || !appId) { console.error("Message incomplet:", msg); continue; }
+    const { appName, platform, bundleId, backfillDays } = msg || {};
+    if (!appName || !platform || !bundleId) { console.error("Message incomplet:", msg); continue; }
 
     try {
-      const stats = await runIncremental({ appName, platform, appId, backfillDays, gplay, store });
+      const stats = await runIncremental({ appName, platform, bundleId, backfillDays, gplay, store });
       console.log("[INC] Résultat:", stats);
     } catch (e) {
       console.error("Erreur worker:", e?.message || e);
