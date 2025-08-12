@@ -81,14 +81,12 @@ function toDdbItem(raw) {
     app_version: raw.app_version,
     app_id: raw.app_id,                 // Android = bundleId, iOS = facultatif
     bundle_id: raw.bundle_id || raw.app_id,
-    review_id: raw.review_id != null ? String(raw.review_id) : undefined,
   };
   const pk = appPk(rv.platform, rv.bundle_id);
   const sk = `${rv.date}#${sig3(rv.date, rv.text, rv.user_name)}`;
   return {
     app_pk: pk,
     ts_review: sk,
-    review_id: rv.review_id,
     date: rv.date,
     rating: rv.rating,
     text: rv.text,
@@ -135,10 +133,8 @@ async function scrapeAndroidReviews({ gplay, appName, bundleId, fromISO, toISO }
       rating: r?.score,
       text: r?.text,
       user_name: r?.userName ?? "",
-      app_version: r?.appVersion ?? "",
-      app_id: bundleId,
+      app_version: r?.version ?? "",
       bundle_id: bundleId,
-      review_id: r?.reviewId ? `android_${bundleId}_${r.reviewId}` : undefined,
     }));
     let passedFrom = false;
     for (const it of mapped) {
@@ -179,9 +175,7 @@ async function scrapeIosReviews({ store, appName, bundleId, fromISO, toISO }) {
       text: r?.text,
       user_name: r?.userName ?? "",
       app_version: r?.version ?? "",
-      // app_id absent (numérique inconnu), c'est volontaire
       bundle_id: bundleId,
-      review_id: r?.id ? `ios_${bundleId}_${r.id}` : undefined,
     }));
     let passedFrom = false;
     for (const it of mapped) {
