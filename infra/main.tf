@@ -77,10 +77,10 @@ resource "aws_cognito_user_pool_client" "revox_app_client" {
 # Athorizer Cognito
 ########################################
 resource "aws_apigatewayv2_authorizer" "cognito_authorizer" {
-  name                       = "revox-cognito-authorizer"
-  api_id                     = aws_apigatewayv2_api.http_api.id
-  authorizer_type            = "JWT"
-  identity_sources           = ["$request.header.Authorization"]
+  name             = "revox-cognito-authorizer"
+  api_id           = aws_apigatewayv2_api.http_api.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
   jwt_configuration {
     audience = [aws_cognito_user_pool_client.revox_app_client.id]
     issuer   = "https://${aws_cognito_user_pool.revox_user_pool.endpoint}"
@@ -110,47 +110,6 @@ resource "aws_dynamodb_table" "users" {
 }
 
 ########################################
-# DynamoDB: table des extractions CSV
-########################################
-resource "aws_dynamodb_table" "extractions" {
-  name = "revox_extractions"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key  = "user_id"
-  range_key = "extraction_id"
-
-  # Définition des attributs (au niveau racine)
-  attribute {
-    name = "user_id"
-    type = "S"
-  }
-  attribute {
-    name = "extraction_id"
-    type = "S"
-  }
-  attribute {
-    name = "status"
-    type = "S"
-  }
-  attribute {
-    name = "created_at"
-    type = "S"
-  }
-
-  # GSI pour requêtes par status + date
-  global_secondary_index {
-    name = "status-createdAt-index"
-    hash_key = "status"
-    range_key = "created_at"
-    projection_type = "ALL"
-  }
-
-  # Les autres attributs (app_name, from_date, to_date,
-  # s3_key, status, created_at, updated_at, error_message)
-  # seront stockés automatiquement.
-}
-
-########################################
 # Table DynamoDB : APP_REVIEWS
 ########################################
 resource "aws_dynamodb_table" "app_reviews" {
@@ -160,27 +119,27 @@ resource "aws_dynamodb_table" "app_reviews" {
   hash_key  = "app_pk"
   range_key = "ts_review"
 
-  attribute { 
+  attribute {
     name = "app_pk"
-    type = "S" 
+    type = "S"
   }
-  attribute { 
+  attribute {
     name = "ts_review"
-    type = "S" 
+    type = "S"
   }
 
   # GSI pour lookup/anti‑doublon rapide par review_id
   global_secondary_index {
-    name               = "by_review_id"
-    hash_key           = "review_id"
-    range_key          = "app_pk"
-    projection_type    = "ALL"
+    name            = "by_review_id"
+    hash_key        = "review_id"
+    range_key       = "app_pk"
+    projection_type = "ALL"
   }
 
   # Attribut déclaré pour la GSI
-  attribute { 
+  attribute {
     name = "review_id"
-    type = "S" 
+    type = "S"
   }
 
   tags = {
@@ -193,9 +152,9 @@ resource "aws_dynamodb_table" "app_reviews" {
 # SQS : file pour orchestrer les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {
-  name = "revox-extraction-queue"
-  visibility_timeout_seconds = 300    # 5 min pour traiter chaque message
-  message_retention_seconds  = 86400  # conserve 24 h
+  name                       = "revox-extraction-queue"
+  visibility_timeout_seconds = 300   # 5 min pour traiter chaque message
+  message_retention_seconds  = 86400 # conserve 24 h
 }
 
 ########################################
@@ -216,65 +175,51 @@ resource "aws_apigatewayv2_integration" "api_integration" {
   payload_format_version = "2.0"
 }
 
-# 3. Les routes existantes
-# GET /health
+# 3. Public: GET /health
 resource "aws_apigatewayv2_route" "health" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /health"
   target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+  # SANS authorization_type -> public
 }
 
-# GET /dashboard
-resource "aws_apigatewayv2_route" "dashboard" {
+# 4. Protégé: ANY /  (la racine "/")
+resource "aws_apigatewayv2_route" "root" {
   api_id             = aws_apigatewayv2_api.http_api.id
-  route_key          = "GET /dashboard"
+  route_key          = "ANY /"
   target             = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
 }
 
-# POST /extract
-resource "aws_apigatewayv2_route" "extract" {
-  api_id             = aws_apigatewayv2_api.http_api.id
-  route_key          = "POST /extract"
-  target             = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
-}
-
-# GET /search-app
-resource "aws_apigatewayv2_route" "search_app" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "GET /search-app"
-  target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
-}
-
-# ANY /{proxy+} (inclut POST /extract et toutes tes autres routes Express)
+# 5. Protégé: ANY /{proxy+}  (tout le reste)
 resource "aws_apigatewayv2_route" "proxy" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "ANY /{proxy+}"
-  target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+  api_id             = aws_apigatewayv2_api.http_api.id
+  route_key          = "ANY /{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
 }
 
-# 4. Stage par défaut
+# 6. Stage par défaut
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.http_api.id
   name        = "$default"
   auto_deploy = true
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.apigw_logs.arn
-    format = "{\"requestId\":\"$context.requestId\",\"routeKey\":\"$context.routeKey\",\"status\":\"$context.status\",\"error\":\"$context.error.message\"}"
+    format          = "{\"requestId\":\"$context.requestId\",\"routeKey\":\"$context.routeKey\",\"status\":\"$context.status\",\"error\":\"$context.error.message\"}"
 
   }
   default_route_settings {
     throttling_burst_limit   = 10000
     throttling_rate_limit    = 5000
     detailed_metrics_enabled = true
-    logging_level = "INFO"
+    logging_level            = "INFO"
   }
 }
 
-# 5. Permission pour que API GW puisse invoquer Lambda
+# 7. Permission pour que API GW puisse invoquer Lambda
 resource "aws_lambda_permission" "allow_apigw" {
   statement_id  = "b5f844c3-68f5-5e58-9c26-6f00925e94b2"
   action        = "lambda:InvokeFunction"
@@ -303,13 +248,11 @@ resource "aws_lambda_function" "api" {
   timeout          = 10
   filename         = "${path.module}/dummy.zip"
   source_code_hash = filebase64sha256("${path.module}/dummy.zip")
-  kms_key_arn = aws_kms_key.lambda_env.arn
+  kms_key_arn      = aws_kms_key.lambda_env.arn
   environment {
     variables = {
-      EXTRACTIONS_TABLE    = aws_dynamodb_table.extractions.name
       APP_REVIEWS_TABLE    = aws_dynamodb_table.app_reviews.name
       EXTRACTION_QUEUE_URL = aws_sqs_queue.extraction_queue.url
-      S3_BUCKET = aws_s3_bucket.csv_bucket.bucket
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
@@ -326,19 +269,17 @@ resource "aws_lambda_function" "api" {
 #  Ressource gérant la lambda worker
 ########################################
 resource "aws_lambda_function" "worker" {
-  function_name = "revox-worker"
-  role          = aws_iam_role.lambda_exec.arn
-  handler       = "worker.handler"
-  runtime       = "nodejs18.x"
-  timeout       = 300
-  filename      = "${path.module}/dummy.zip" # remplace plus tard par un vrai zip
+  function_name    = "revox-worker"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "worker.handler"
+  runtime          = "nodejs18.x"
+  timeout          = 300
+  filename         = "${path.module}/dummy.zip" # remplace plus tard par un vrai zip
   source_code_hash = filebase64sha256("${path.module}/dummy.zip")
 
   environment {
     variables = {
-      EXTRACTIONS_TABLE = aws_dynamodb_table.extractions.name
-      APP_REVIEWS_TABLE    = aws_dynamodb_table.app_reviews.name
-      S3_BUCKET = aws_s3_bucket.csv_bucket.bucket    
+      APP_REVIEWS_TABLE = aws_dynamodb_table.app_reviews.name
     }
   }
 
@@ -352,20 +293,9 @@ resource "aws_lambda_function" "worker" {
 
 # Liaison SQS -> Lambda worker
 resource "aws_lambda_event_source_mapping" "worker_sqs" {
-  event_source_arn  = aws_sqs_queue.extraction_queue.arn
-  function_name     = aws_lambda_function.worker.arn
-  batch_size        = 1
-}
-
-#######################################
-# Bucket S3 for csv extractions
-########################################
-resource "aws_s3_bucket" "csv_bucket" {
-  bucket = "revox-csv"
-
-  tags = {
-    Name = "Bucket CSV pour Revox"
-  }
+  event_source_arn = aws_sqs_queue.extraction_queue.arn
+  function_name    = aws_lambda_function.worker.arn
+  batch_size       = 1
 }
 
 
@@ -395,7 +325,7 @@ resource "aws_cloudwatch_log_resource_policy" "apigw_logs" {
         Principal = {
           Service = "apigateway.amazonaws.com"
         },
-        Action = "logs:PutLogEvents",
+        Action   = "logs:PutLogEvents",
         Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/http-api/revox-api:*"
       }
     ]
@@ -403,7 +333,7 @@ resource "aws_cloudwatch_log_resource_policy" "apigw_logs" {
 }
 
 ########################################
-# IAM pour la Lambda "revox-backend"
+# IAM pour Lambda
 ########################################
 resource "aws_iam_role" "lambda_exec" {
   name = "revox-backend-exec-role"
@@ -436,12 +366,6 @@ resource "aws_iam_role_policy_attachment" "lambda_sqs" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
 }
 
-# Permission S3
-resource "aws_iam_role_policy_attachment" "lambda_s3" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-}
-
 # Clé KMS pour chiffrer les variables d'environnement Lambda
 resource "aws_kms_key" "lambda_env" {
   description             = "Clé KMS pour les variables d’environnement Lambda"
@@ -457,8 +381,8 @@ resource "aws_kms_key_policy" "lambda_env_policy" {
     Version = "2012-10-17",
     Statement = [
       {
-        Sid: "Allow Lambda Execution Role to decrypt",
-        Effect: "Allow",
+        Sid : "Allow Lambda Execution Role to decrypt",
+        Effect : "Allow",
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/revox-backend-exec-role"
         },
@@ -470,13 +394,13 @@ resource "aws_kms_key_policy" "lambda_env_policy" {
         Resource = "*"
       },
       {
-        Sid: "EnableIAMUserPermissions",
-        Effect: "Allow",
-        Principal: {
-          AWS: "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        Sid : "EnableIAMUserPermissions",
+        Effect : "Allow",
+        Principal : {
+          AWS : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         },
-        Action: "kms:*",
-        Resource: "*"
+        Action : "kms:*",
+        Resource : "*"
       }
     ]
   })

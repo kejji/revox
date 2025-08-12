@@ -94,9 +94,9 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
         Resource = "*"
       },
       {
-        Sid    = "IAMServiceLinkedRoleForRDS",
-        Effect = "Allow",
-        Action = "iam:CreateServiceLinkedRole",
+        Sid      = "IAMServiceLinkedRoleForRDS",
+        Effect   = "Allow",
+        Action   = "iam:CreateServiceLinkedRole",
         Resource = "*",
         Condition = {
           StringEquals = {
