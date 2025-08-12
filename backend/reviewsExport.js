@@ -26,7 +26,7 @@ function writeHeader(res, fileBaseName = "reviews_export") {
   // Entêtes
   res.write([
     "app_name","platform","date","rating","text","user_name",
-    "app_version","app_id","bundle_id","review_id"
+    "app_version","bundle_id"
   ].join(",") + "\n");
 }
 
@@ -81,9 +81,7 @@ export async function exportReviewsCsv(req, res) {
           csvEscape(it.text),
           csvEscape(it.user_name),
           csvEscape(it.app_version),
-          csvEscape(it.app_id),
-          csvEscape(it.bundle_id),
-          csvEscape(it.review_id)
+          csvEscape(it.bundle_id)
         ].join(",") + "\n");
       }
 
