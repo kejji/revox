@@ -6,7 +6,7 @@ import { createExtraction, getExtractionStatus, downloadExtraction } from "./ext
 import { searchApp } from "./searchApp.js";
 import { listReviews } from "./reviews.js";
 import { exportReviewsCsv } from "./reviewsExport.js";
-import { dispatchIncrementalIngest } from "./extract.js";
+import { dispatchIncrementalIngest } from "./ingest.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -20,21 +20,6 @@ app.get("/health", (_, res) => res.send({ status: "OK" }));
 app.get("/dashboard", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   res.json({ message: "Données sensibles pour " + req.auth.sub });
-});
-
-app.post("/extract", (req, res) => {
-  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
-  createExtraction(req, res);
-});
-
-app.get("/extract/:id", (req, res) => {
-  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
-  getExtractionStatus(req, res);
-});
-
-app.get("/extract/:id/download", (req, res) => {
-  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
-  downloadExtraction(req, res);
 });
 
 app.get("/search-app", searchApp);
