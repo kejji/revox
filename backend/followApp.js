@@ -1,6 +1,6 @@
 // backend/followApp.js
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, DeleteCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
 const REGION = process.env.AWS_REGION;
 const TABLE = process.env.USER_FOLLOWS_TABLE;
@@ -68,6 +68,31 @@ export async function unfollowApp(req, res) {
     return res.status(200).json({ ok: true, unfollowed: { bundleId, platform } });
   } catch (err) {
     console.error("Erreur unfollowApp:", err);
+    return res.status(500).json({ error: "Erreur serveur" });
+  }
+}
+
+export async function getFollowedApps(req, res) {
+  const userId = req.auth?.sub;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const result = await ddb.send(new QueryCommand({
+      TableName: TABLE,
+      KeyConditionExpression: "user_id = :uid",
+      ExpressionAttributeValues: {
+        ":uid": userId
+      }
+    }));
+
+    const followed = result.Items?.map(item => {
+      const [bundleId, platform] = item.app_pk.split("#");
+      return { bundleId, platform };
+    }) || [];
+
+    return res.status(200).json({ followed });
+  } catch (err) {
+    console.error("Erreur getFollowedApps:", err);
     return res.status(500).json({ error: "Erreur serveur" });
   }
 }
