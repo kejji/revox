@@ -6,6 +6,8 @@ import { searchApp } from "./searchApp.js";
 import { listReviews } from "./reviews.js";
 import { exportReviewsCsv } from "./reviewsExport.js";
 import { dispatchIncrementalIngest } from "./ingest.js";
+import { followApp } from "./followApp.js";
+
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -36,6 +38,11 @@ app.get("/reviews/export", (req, res) => {
 app.post("/reviews/ingest", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   dispatchIncrementalIngest(req, res);
+});
+
+app.post("/follow-app", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  followApp(req, res);
 });
 
 export default app;
