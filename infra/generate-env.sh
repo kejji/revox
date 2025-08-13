@@ -22,6 +22,7 @@ EXTRACTION_QUEUE_URL=$(terraform output -raw extraction_queue_url)
 APP_REVIEWS_TABLE=$(terraform output -raw app_reviews_table_name)
 USER_FOLLOWS_TABLE=$(terraform output -raw user_follows_table_name)
 REVOX_USERS_TABLE=$(terraform output -raw revox_users_table_name)
+APPS_METADATA_TABLE=$(terraform output -raw apps_metadata_table_name)
 EOF
 
 echo "✓ .env backend generated in ../backend/.env"

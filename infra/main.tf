@@ -175,6 +175,26 @@ resource "aws_dynamodb_table" "user_follows" {
 }
 
 ########################################
+# Table DynamoDB : APPS_METADATA
+########################################
+
+
+resource "aws_dynamodb_table" "apps_metadata" {
+  name         = "apps_metadata"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "app_pk"
+
+  attribute {
+    name = "app_pk"
+    type = "S"
+  }
+
+   tags = {
+    Name = "Revox Apps Metadata"
+  }
+}
+
+########################################
 # SQS : file pour orchestrer les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {

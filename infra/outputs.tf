@@ -37,3 +37,7 @@ output "user_follows_table_name" {
 output "revox_users_table_name" {
   value = trimspace(aws_dynamodb_table.users.name)
 }
+
+output "apps_metadata_table_name" {
+  value = trimspace(aws_dynamodb_table.users.name)
+}
