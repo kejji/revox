@@ -286,6 +286,7 @@ resource "aws_lambda_function" "api" {
     variables = {
       APP_REVIEWS_TABLE    = aws_dynamodb_table.app_reviews.name
       EXTRACTION_QUEUE_URL = aws_sqs_queue.extraction_queue.url
+      USER_FOLLOWS_TABLE = aws_dynamodb_table.user_follows.name
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
