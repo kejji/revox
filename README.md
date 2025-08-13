@@ -142,14 +142,6 @@ revox/
 
 ---
 
-## 👥 Auteur
-
-Projet développé par **Slimane Kejji**  
-📧 [kejji.dev@gmail.com](mailto:kejji.dev@gmail.com)  
-🌍 [linkedin.com/in/kejji](https://linkedin.com/in/kejji)
-
----
-
 ## 🗓️ Dernière mise à jour
 
 📅 Août 2025
