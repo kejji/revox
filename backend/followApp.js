@@ -5,6 +5,8 @@ import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 const REGION = process.env.AWS_REGION;
 const TABLE = process.env.USER_FOLLOWS_TABLE;
 
+console.log("FollowApp: using table =", TABLE);
+
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
   { marshallOptions: { removeUndefinedValues: true } }
@@ -26,9 +28,9 @@ export async function followApp(req, res) {
     await ddb.send(new PutCommand({
       TableName: TABLE,
       Item: {
-        userId,
-        appKey,
-        followedAt: now,
+        user_id: userId,
+        app_pk: appKey,
+        followed_at: now,
       },
       ConditionExpression: "attribute_not_exists(userId) AND attribute_not_exists(appKey)"
     }));
