@@ -45,6 +45,11 @@ app.post("/follow-app", (req, res) => {
   followApp(req, res);
 });
 
+app.delete("/follow-app", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  unfollowApp(req, res);
+});
+
 export default app;
 
 if (process.env.LOCAL === "true") {

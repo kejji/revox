@@ -44,3 +44,30 @@ export async function followApp(req, res) {
     return res.status(500).json({ error: "Erreur serveur" });
   }
 }
+
+export async function unfollowApp(req, res) {
+  const userId = req.auth?.sub;
+  const { bundleId, platform } = req.body || {};
+
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!bundleId || !platform) {
+    return res.status(400).json({ error: "bundleId et platform sont requis" });
+  }
+
+  const appKey = `${bundleId}#${platform.toLowerCase()}`;
+
+  try {
+    await ddb.send(new DeleteCommand({
+      TableName: TABLE,
+      Key: {
+        user_id: userId,
+        app_key: appKey
+      }
+    }));
+
+    return res.status(200).json({ ok: true, unfollowed: { bundleId, platform } });
+  } catch (err) {
+    console.error("Erreur unfollowApp:", err);
+    return res.status(500).json({ error: "Erreur serveur" });
+  }
+}
