@@ -100,7 +100,7 @@ Toutes les routes (sauf `/health` et `/search-app`) nécessitent un JWT valide.
 | `GET`   | `/reviews`         | Lister les avis d’une application      |
 | `GET`   | `/reviews/export`  | Exporter les avis au format CSV        |
 
-📄 Voir [`revox_api_doc.md`](./backend/revox_api_doc.md) pour le détail des payloads & réponses.
+📄 Voir [`revox_api_doc.md`](https://github.com/kejji/revox/blob/main/backend/revox_api_doc.md) pour le détail des payloads & réponses.
 
 ---
 
@@ -113,7 +113,7 @@ Toutes les routes (sauf `/health` et `/search-app`) nécessitent un JWT valide.
 | `app_reviews`      | `app_pk`          | `ts_review`      | Avis utilisateurs                    |
 | `RevoxUsers`       | `id`              | —                | Utilisateurs Cognito                 |
 
-📄 Voir [`revox_dynamodb_doc.md`](./backend/revox_dynamodb_doc.md) pour les schémas détaillés.
+📄 Voir [`revox_dynamodb_doc.md`](https://github.com/kejji/revox/blob/main/infra/revox_dynamodb_doc.md) pour les schémas détaillés.
 
 ---
 
