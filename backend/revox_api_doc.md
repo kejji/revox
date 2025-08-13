@@ -191,14 +191,3 @@ Télécharge les avis au format CSV.
 
 🔁 Réponse = fichier `.csv` avec les colonnes :  
 `app_name`, `platform`, `date`, `rating`, `text`, `user_name`, `app_version`, `bundle_id`
-
----
-
-## ✳️ À venir (exemples de routes possibles)
-- `GET /dashboard` → apps suivies + synthèse
-- `GET /apps/:bundleId/stats` → moyenne, évolution, etc.
-
----
-
-## 📬 Contact
-Pour toute question, contactez l’équipe backend.
