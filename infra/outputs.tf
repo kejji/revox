@@ -39,5 +39,5 @@ output "revox_users_table_name" {
 }
 
 output "apps_metadata_table_name" {
-  value = trimspace(aws_dynamodb_table.users.name)
+  value = trimspace(aws_dynamodb_table.apps_metadata.name)
 }
