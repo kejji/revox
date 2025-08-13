@@ -12,14 +12,14 @@ const ddb = DynamoDBDocumentClient.from(
 
 export async function followApp(req, res) {
   const userId = req.auth?.sub;
-  const { appId, platform } = req.body || {};
+  const { bundleId, platform } = req.body || {};
 
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  if (!appId || !platform) {
-    return res.status(400).json({ error: "appId et platform sont requis" });
+  if (!bundleId || !platform) {
+    return res.status(400).json({ error: "bundleId et platform sont requis" });
   }
 
-  const appKey = `${appId}#${platform.toLowerCase()}`;
+  const appKey = `${bundleId}#${platform.toLowerCase()}`;
   const now = new Date().toISOString();
 
   try {
@@ -33,7 +33,7 @@ export async function followApp(req, res) {
       ConditionExpression: "attribute_not_exists(userId) AND attribute_not_exists(appKey)"
     }));
 
-    return res.status(201).json({ ok: true, followed: { appId, platform, followedAt: now } });
+    return res.status(201).json({ ok: true, followed: { bundleId, platform, followedAt: now } });
   } catch (err) {
     if (err?.name === "ConditionalCheckFailedException") {
       return res.status(200).json({ ok: true, already: true });
