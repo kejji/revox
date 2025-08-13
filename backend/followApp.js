@@ -1,6 +1,6 @@
 // backend/followApp.js
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 
 const REGION = process.env.AWS_REGION;
 const TABLE = process.env.USER_FOLLOWS_TABLE;
@@ -61,7 +61,7 @@ export async function unfollowApp(req, res) {
       TableName: TABLE,
       Key: {
         user_id: userId,
-        app_key: appKey
+        app_pk: appKey
       }
     }));
 

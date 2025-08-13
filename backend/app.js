@@ -6,7 +6,7 @@ import { searchApp } from "./searchApp.js";
 import { listReviews } from "./reviews.js";
 import { exportReviewsCsv } from "./reviewsExport.js";
 import { dispatchIncrementalIngest } from "./ingest.js";
-import { followApp } from "./followApp.js";
+import { followApp, unfollowApp } from "./followApp.js";
 
 import dotenv from "dotenv";
 dotenv.config();
