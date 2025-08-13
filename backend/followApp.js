@@ -1,11 +1,12 @@
 // backend/followApp.js
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, DeleteCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, DeleteCommand, QueryCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { searchAppMetadata } from "./searchAppMetadata.js";
+
 
 const REGION = process.env.AWS_REGION;
-const TABLE = process.env.USER_FOLLOWS_TABLE;
-
-console.log("FollowApp: using table =", TABLE);
+const USER_FOLLOWS_TABLE = process.env.USER_FOLLOWS_TABLE;
+const APPS_METADATA_TABLE = process.env.APPS_METADATA_TABLE;
 
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
@@ -25,15 +26,19 @@ export async function followApp(req, res) {
   const now = new Date().toISOString();
 
   try {
+    // 1. Insérer dans user_follows
     await ddb.send(new PutCommand({
-      TableName: TABLE,
+      TableName: USER_FOLLOWS_TABLE,
       Item: {
         user_id: userId,
         app_pk: appKey,
         followed_at: now,
       },
-      ConditionExpression: "attribute_not_exists(userId) AND attribute_not_exists(appKey)"
+      ConditionExpression: "attribute_not_exists(user_id) AND attribute_not_exists(app_pk)"
     }));
+
+    // 2. Tenter d'enrichir apps_metadata si l'app n'existe pas encore
+    enrichAppMetadataIfNeeded(appKey, bundleId, platform);
 
     return res.status(201).json({ ok: true, followed: { bundleId, platform, followedAt: now } });
   } catch (err) {
@@ -58,7 +63,7 @@ export async function unfollowApp(req, res) {
 
   try {
     await ddb.send(new DeleteCommand({
-      TableName: TABLE,
+      TableName: USER_FOLLOWS_TABLE,
       Key: {
         user_id: userId,
         app_pk: appKey
@@ -78,21 +83,71 @@ export async function getFollowedApps(req, res) {
 
   try {
     const result = await ddb.send(new QueryCommand({
-      TableName: TABLE,
+      TableName: USER_FOLLOWS_TABLE,
       KeyConditionExpression: "user_id = :uid",
       ExpressionAttributeValues: {
         ":uid": userId
       }
     }));
 
-    const followed = result.Items?.map(item => {
-      const [bundleId, platform] = item.app_pk.split("#");
-      return { bundleId, platform };
-    }) || [];
+    const items = result.Items ?? [];
+    if (!items.length) return res.status(200).json({ followed: [] });
 
-    return res.status(200).json({ followed });
+    // Récupérer toutes les app_pk
+    const appKeys = items.map(item => item.app_pk);
+
+    // Récupérer les métadonnées en parallèle
+    const enriched = await Promise.all(appKeys.map(async (appKey) => {
+      const [bundleId, platform] = appKey.split("#");
+      try {
+        const meta = await ddb.send(new GetCommand({
+          TableName: APPS_METADATA_TABLE,
+          Key: { app_pk: appKey }
+        }));
+
+        return {
+          bundleId,
+          platform,
+          name: meta.Item?.name || null,
+          icon: meta.Item?.icon || null
+        };
+      } catch (err) {
+        console.warn("getFollowedApps: erreur meta pour", appKey, err.message);
+        return { bundleId, platform, name: null, icon: null };
+      }
+    }));
+
+    return res.status(200).json({ followed: enriched });
   } catch (err) {
     console.error("Erreur getFollowedApps:", err);
     return res.status(500).json({ error: "Erreur serveur" });
+  }
+}
+
+async function enrichAppMetadataIfNeeded(appKey, bundleId, platform) {
+  try {
+    const existing = await ddb.send(new GetCommand({
+      TableName: APPS_METADATA_TABLE,
+      Key: { app_pk: appKey }
+    }));
+    if (existing.Item) return;
+
+    const meta = await searchAppMetadata(bundleId, platform);
+    if (!meta) return;
+
+    await ddb.send(new PutCommand({
+      TableName: APPS_METADATA_TABLE,
+      Item: {
+        app_pk: appKey,
+        name: meta.name,
+        icon: meta.icon,
+        platform,
+        bundleId,
+        lastUpdated: new Date().toISOString()
+      },
+      ConditionExpression: "attribute_not_exists(app_key)"
+    }));
+  } catch (e) {
+    console.warn("enrichAppMetadataIfNeeded: skipped", e.message);
   }
 }
