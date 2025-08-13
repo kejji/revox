@@ -1,49 +1,65 @@
-# Revox
 
-🧠 Revox is a web app that extracts, analyzes, and leverages user feedback from public sources (e.g. app store reviews).  
-It uses **AWS Cognito** for authentication, a **JWT-secured Express backend**, and a **React frontend with Amplify**.
+# 📱 Revox
+
+**Revox** est une application web (SaaS) qui permet d’extraire, analyser et exploiter les avis utilisateurs des apps mobiles publiés sur les stores (App Store & Google Play).  
+Elle s’adresse principalement aux équipes Produit, Marketing ou Business pour :
+- suivre les avis utilisateurs dans le temps,
+- détecter les incidents ou besoins récurrents,
+- prioriser les développements à venir.
 
 ---
 
-## 🚀 Run the project locally
+## 🧱 Architecture technique
 
-### 1. Clone the repository
+- **Frontend** : React + Vite + Amplify
+- **Backend** : Node.js (Express) + JWT + API Gateway (HTTP API)
+- **Infra** : AWS (Lambda, DynamoDB, SQS, Cognito, Terraform)
+
+---
+
+## 🚀 Démarrage local
+
+### 1. Cloner le projet
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/kejji/revox.git
 cd revox
 ```
 
-### 2. Provision Cognito with Terraform
+### 2. Provisionner l’infrastructure (Terraform)
 ```bash
 cd infra
 terraform init
 terraform apply
 ```
-➡️ Copy the `cognito_user_pool_id` and `cognito_app_client_id` values shown after apply.
+📌 À la fin, note bien :
+- `cognito_user_pool_id`
+- `cognito_app_client_id`
+- `extraction_queue_url`
+- `http_api_endpoint`
 
 ---
 
-### 3. Start the Express backend
+### 3. Lancer le backend
 ```bash
 cd backend
-cp .env.example .env  # If the file doesn’t exist, create it
+cp .env.example .env
 npm install
 npm run dev
 ```
 
-#### `.env` file (from `.env.example`)
-```
-AWS_REGION=eu-west-3                            # same as var.aws_region
-COGNITO_USER_POOL_ID=<your_user_pool_id>        # terraform output cognito_user_pool_id
-COGNITO_APP_CLIENT_ID=<your_app_client_id>      # terraform output cognito_app_client_id
-EXTRACTION_QUEUE_URL=<sqs_url>                  # terraform output extraction_queue_url
-EXTRACTIONS_TABLE=revox_extractions             # DynamoDB table name
-LOCAL=true                                      # start local Express server
+#### `.env` (extrait)
+```env
+AWS_REGION=eu-west-3
+COGNITO_USER_POOL_ID=...
+COGNITO_APP_CLIENT_ID=...
+EXTRACTION_QUEUE_URL=...
+EXTRACTIONS_TABLE=revox_extractions
+LOCAL=true
 ```
 
 ---
 
-### 4. Start the React frontend
+### 4. Lancer le frontend
 ```bash
 cd frontend
 cp .env.example .env
@@ -51,50 +67,89 @@ npm install
 npm run dev
 ```
 
-#### `.env` file (from `.env.example`)
-```
-COGNITO_USER_POOL_ID=<your_user_pool_id>   # terraform output cognito_user_pool_id
-COGNITO_APP_CLIENT_ID=<your_app_client_id> # terraform output cognito_app_client_id
-API_URL=<backend_api_url>                  # or terraform output http_api_endpoint
-```
-
-### Extraction API
-
-Send a `POST` request to `/extract` with the following JSON body:
-
-```json
-{
-  "appName": "My App",
-  "iosAppId": "123456789",
-  "androidAppId": "com.example.app",
-  "fromDate": "2024-01-01",
-  "toDate": "2024-01-31"
-}
+#### `.env` (extrait)
+```env
+COGNITO_USER_POOL_ID=...
+COGNITO_APP_CLIENT_ID=...
+API_URL=http://localhost:3000  # ou terraform output
 ```
 
 ---
 
-## 🔐 Authentication
+## 🔐 Authentification
 
-- Sign-up / Sign-in via AWS Cognito (with Amplify)
-- Email confirmation via verification code
-- JWT token stored on the client
-- Backend `/dashboard` route is protected using JWT
+- Inscription / Connexion via **Cognito** (Amplify)
+- Email de vérification
+- Token JWT stocké côté client
+- Les routes backend sont protégées par header `Authorization: Bearer <token>`
 
 ---
 
-## 📁 Project structure
+## 📘 API REST
+
+Toutes les routes (sauf `/health` et `/search-app`) nécessitent un JWT valide.  
+
+| Méthode | Route              | Description                            |
+|--------:|--------------------|----------------------------------------|
+| `GET`   | `/health`          | Vérifie l’état du backend              |
+| `GET`   | `/search-app`      | Recherche d’apps par nom               |
+| `POST`  | `/follow-app`      | Suivre une application                 |
+| `DELETE`| `/follow-app`      | Ne plus suivre une application         |
+| `GET`   | `/follow-app`      | Liste des apps suivies                 |
+| `POST`  | `/reviews/ingest`  | Lancer une extraction des avis        |
+| `GET`   | `/reviews`         | Lister les avis d’une application      |
+| `GET`   | `/reviews/export`  | Exporter les avis au format CSV        |
+
+📄 Voir [`revox_api_doc.md`](./backend/revox_api_doc.md) pour le détail des payloads & réponses.
+
+---
+
+## 🗃️ Schéma des tables DynamoDB
+
+| Table              | Partition key     | Sort key         | Description                          |
+|-------------------|-------------------|------------------|--------------------------------------|
+| `user_follows`     | `user_id`         | `app_pk`         | Lien user → apps suivies             |
+| `apps_metadata`    | `app_key`         | —                | Cache nom + icône                    |
+| `app_reviews`      | `app_pk`          | `ts_review`      | Avis utilisateurs                    |
+| `RevoxUsers`       | `id`              | —                | Utilisateurs Cognito                 |
+
+📄 Voir [`revox_dynamodb_doc.md`](./backend/revox_dynamodb_doc.md) pour les schémas détaillés.
+
+---
+
+## 📁 Structure du projet
 
 ```
 revox/
-├── backend/       → Express backend (JWT-protected)
-├── frontend/      → React + Amplify frontend
-├── infra/         → Terraform configuration (Cognito, API Gateway, DynamoDB, SQS)
-└── README.md      → This file 😉
+├── backend/       → Express + Lambda + SQS + API
+│   └── revox_api_doc.md
+├── frontend/      → React + Amplify
+├── infra/         → Terraform (Cognito, Gateway, DB)
+│   └── revox_dynamodb_doc.md
+└── README.md      → Ce fichier 😉
 ```
 
 ---
 
-## 🗓️ Last updated
+## 🛠 Technologies principales
 
-2025-07-08
+- **React** / **Vite** / **Tailwind** (UI)
+- **Amplify** / **Cognito** (auth)
+- **Express** (backend Node)
+- **Lambda** / **SQS** / **DynamoDB**
+- **Terraform** (infra as code)
+- **GitHub Actions** (CI/CD prévu)
+
+---
+
+## 👥 Auteur
+
+Projet développé par **Slimane Kejji**  
+📧 [kejji.dev@gmail.com](mailto:kejji.dev@gmail.com)  
+🌍 [linkedin.com/in/kejji](https://linkedin.com/in/kejji)
+
+---
+
+## 🗓️ Dernière mise à jour
+
+📅 Août 2025
