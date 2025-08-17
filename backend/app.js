@@ -12,7 +12,28 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(cors());
+// NEW — Définis ici les origines autorisées (dev + prod)
+const allowedOrigins = [
+  "http://localhost:8080",             // ton front Vite en local
+  // "https://revox.yourdomain.com",    // ← ajoute ton domaine de prod si besoin
+];
+
+// NEW — Options CORS : méthodes + headers utilisés par ton front
+const corsOptions = {
+  origin: (origin, cb) => {
+    // autorise aussi les requêtes sans Origin (ex: curl, health checks)
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error("Not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Authorization", "Content-Type"],
+  optionsSuccessStatus: 204, // 204 pour un préflight propre
+};
+
+// NEW — Applique CORS globalement AVANT tout le reste
+app.use(cors(corsOptions));
+// NEW — Gère les préflight OPTIONS pour toutes les routes
+app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(decodeJwtSub);
 

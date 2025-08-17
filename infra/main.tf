@@ -218,6 +218,13 @@ resource "aws_lambda_event_source_mapping" "worker_sqs" {
 resource "aws_apigatewayv2_api" "http_api" {
   name          = "revox-api"
   protocol_type = "HTTP"
+  cors_configuration {
+    allow_origins = ["http://localhost:8080"]
+    allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
+    allow_headers = ["Authorization", "Content-Type"]
+    expose_headers = []
+    max_age        = 600
+  }
 }
 
 # 2. Intégration unique vers ta Lambda
