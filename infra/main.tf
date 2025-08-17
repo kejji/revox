@@ -222,8 +222,7 @@ resource "aws_apigatewayv2_api" "http_api" {
     allow_origins = ["http://localhost:8080"]
     allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
     allow_headers = ["Authorization", "Content-Type"]
-    expose_headers = []
-    max_age        = 600
+    max_age       = 600
   }
 }
 
@@ -261,7 +260,15 @@ resource "aws_apigatewayv2_route" "proxy" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
 }
 
-# 6. Stage par défaut
+# 6. Route OPTIONS catch-all (préflight) — PAS d’auth
+resource "aws_apigatewayv2_route" "options_proxy" {
+  api_id             = aws_apigatewayv2_api.http_api.id
+  route_key          = "OPTIONS /{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
+  authorization_type = "NONE"
+}
+
+# 7. Stage par défaut
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.http_api.id
   name        = "$default"
@@ -279,7 +286,7 @@ resource "aws_apigatewayv2_stage" "default" {
   }
 }
 
-# 7. Permission pour que API GW puisse invoquer Lambda
+# 8. Permission pour que API GW puisse invoquer Lambda
 resource "aws_lambda_permission" "allow_apigw" {
   statement_id  = "b5f844c3-68f5-5e58-9c26-6f00925e94b2"
   action        = "lambda:InvokeFunction"
