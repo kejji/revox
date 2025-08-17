@@ -13,10 +13,7 @@ dotenv.config();
 
 const app = express();
 
-const allowedOrigins = [
-  "http://localhost:8080",             // ton front Vite en local
-  // "https://revox.yourdomain.com",    // ← ajoute ton domaine de prod si besoin
-];
+const allowedOrigins = [ "http://localhost:8080" ];
 
 const corsOptions = {
   origin: (origin, cb) => {
@@ -31,6 +28,17 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options("(.*)", cors(corsOptions));
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    // Les en-têtes ci-dessous sont posés par cors(), mais on peut être redondant
+    res.setHeader("Access-Control-Allow-Origin", req.headers.origin || allowedOrigins[0]);
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.setHeader("Access-Control-Max-Age", "600");
+    return res.sendStatus(204);
+  }
+  next();
+});
 app.use(express.json());
 app.use(decodeJwtSub);
 
