@@ -13,7 +13,7 @@ dotenv.config();
 
 const app = express();
 
-const allowedOrigins = [ "http://localhost:8080", "https://lovable.dev", "https://preview--revox-frontend.lovable.app" ];
+const allowedOrigins = [ "http://localhost:8080", "https://lovable.dev", "https://preview--revox-frontend.lovable.app", "https://lovable.app" ];
 
 const corsOptions = {
   origin: (origin, cb) => {
