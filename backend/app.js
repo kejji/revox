@@ -13,7 +13,7 @@ dotenv.config();
 
 const app = express();
 
-const allowedOrigins = [ "http://localhost:8080" ];
+const allowedOrigins = [ "http://localhost:8080", "https://lovable.dev/projects/c9a1ce22-5aa0-4154-9698-a80bfd723859" ];
 
 const corsOptions = {
   origin: (origin, cb) => {
