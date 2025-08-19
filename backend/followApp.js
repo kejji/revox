@@ -38,7 +38,7 @@ export async function followApp(req, res) {
     }));
 
     // 2. Tenter d'enrichir apps_metadata si l'app n'existe pas encore
-    enrichAppMetadataIfNeeded(appKey, bundleId, platform);
+    await enrichAppMetadataIfNeeded(appKey, bundleId, platform);
 
     return res.status(201).json({ ok: true, followed: { bundleId, platform, followedAt: now } });
   } catch (err) {
@@ -98,7 +98,7 @@ export async function getFollowedApps(req, res) {
 
     // Récupérer les métadonnées en parallèle
     const enriched = await Promise.all(appKeys.map(async (appKey) => {
-      const [bundleId, platform] = appKey.split("#");
+      const [platform, bundleId] = appKey.split("#");
       try {
         const meta = await ddb.send(new GetCommand({
           TableName: APPS_METADATA_TABLE,
