@@ -22,7 +22,7 @@ export async function followApp(req, res) {
     return res.status(400).json({ error: "bundleId et platform sont requis" });
   }
 
-  const appKey = `${bundleId}#${platform.toLowerCase()}`;
+  const appKey = `${platform.toLowerCase()}#${bundleId}`;
   const now = new Date().toISOString();
 
   try {
@@ -59,7 +59,7 @@ export async function unfollowApp(req, res) {
     return res.status(400).json({ error: "bundleId et platform sont requis" });
   }
 
-  const appKey = `${bundleId}#${platform.toLowerCase()}`;
+  const appKey = `${platform.toLowerCase()}#${bundleId}`;
 
   try {
     await ddb.send(new DeleteCommand({
@@ -145,7 +145,7 @@ async function enrichAppMetadataIfNeeded(appKey, bundleId, platform) {
         bundleId,
         lastUpdated: new Date().toISOString()
       },
-      ConditionExpression: "attribute_not_exists(app_key)"
+      ConditionExpression: "attribute_not_exists(app_pk)"
     }));
   } catch (e) {
     console.warn("enrichAppMetadataIfNeeded: skipped", e.message);
