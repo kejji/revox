@@ -41,3 +41,7 @@ output "revox_users_table_name" {
 output "apps_metadata_table_name" {
   value = trimspace(aws_dynamodb_table.apps_metadata.name)
 }
+
+output "apps_ingest_schedule_table_name" {
+  value = trimspace(aws_dynamodb_table.apps_ingest_schedule.name)
+}

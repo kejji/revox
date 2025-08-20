@@ -13,3 +13,23 @@ variable "aws_profile" {
   type        = string
   default     = "revox-admin"
 }
+
+variable "default_ingest_interval_minutes" {
+  type    = number
+  default = 120
+}
+
+variable "sched_batch_size" {
+  type    = number
+  default = 100
+}
+
+variable "sched_lock_ms" {
+  type    = number
+  default = 600000 # 10 minutes
+}
+
+variable "scheduler_rate_expression" {
+  type    = string
+  default = "rate(5 minutes)" # facile à changer sans redeploy de code
+}

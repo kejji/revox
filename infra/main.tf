@@ -103,7 +103,7 @@ resource "aws_apigatewayv2_authorizer" "cognito_authorizer" {
 
 
 ########################################
-# DynamoDB: table des utilisateurs
+# Table DynamoDB: table des utilisateurs
 ########################################
 resource "aws_dynamodb_table" "users" {
   name         = "revox_users"
@@ -191,6 +191,43 @@ resource "aws_dynamodb_table" "apps_metadata" {
 
    tags = {
     Name = "Revox Apps Metadata"
+  }
+}
+
+########################################
+# Table DynamoDB : APPS_INGEST_SCHEDULE
+########################################
+
+
+resource "aws_dynamodb_table" "apps_ingest_schedule" {
+  name         = "apps_ingest_schedule"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "app_pk"
+
+  attribute { 
+    name = "app_pk"
+    type = "S" 
+  }
+
+  attribute { 
+    name = "due_pk"
+    type = "S" 
+  }
+
+  attribute { 
+    name = "next_run_at"
+    type = "N" 
+  }
+  
+  global_secondary_index {
+    name               = "gsi_due"
+    hash_key           = "due_pk"
+    range_key          = "next_run_at"
+    projection_type    = "ALL"
+  }
+
+  tags = {
+    Name = "Revox Apps Ingest Schedule"
   }
 }
 
@@ -392,7 +429,36 @@ resource "aws_lambda_function" "user_sync" {
   }
 }
 
+########################################
+#  Ressource gérant la lambda scheduler
+########################################
+resource "aws_lambda_function" "scheduler" {
+  function_name    = "revox-scheduler"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "scheduler.handler"
+  runtime          = "nodejs18.x"
+  timeout          = 30
+  filename         = "${path.module}/dummy.zip"
+  source_code_hash = filebase64sha256("${path.module}/dummy.zip")
+  kms_key_arn      = aws_kms_key.lambda_env.arn
 
+  environment {
+    variables = {
+      APP_INGEST_SCHEDULE_TABLE        = aws_dynamodb_table.apps_ingest_schedule.name
+      EXTRACTION_QUEUE_URL             = aws_sqs_queue.extraction_queue.url
+      DEFAULT_INGEST_INTERVAL_MINUTES  = var.default_ingest_interval_minutes
+      SCHED_BATCH_SIZE                 = var.sched_batch_size
+      SCHED_LOCK_MS                    = var.sched_lock_ms
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      filename,
+      source_code_hash,
+    ]
+  }
+}
 
 
 ########################################
@@ -502,6 +568,28 @@ resource "aws_kms_key_policy" "lambda_env_policy" {
   })
 }
 
+########################################
+# EventBride Scheduler
+########################################
 
+resource "aws_cloudwatch_event_rule" "revox_scheduler" {
+  name                = "revox-scheduler"
+  description         = "Planifie l’exécution de la Lambda revox-scheduler"
+  schedule_expression = var.scheduler_rate_expression
+}
+
+resource "aws_cloudwatch_event_target" "revox_scheduler_target" {
+  rule      = aws_cloudwatch_event_rule.revox_scheduler.name
+  target_id = "revox-scheduler-lambda"
+  arn       = aws_lambda_function.scheduler.arn
+}
+
+resource "aws_lambda_permission" "allow_events_to_invoke_scheduler" {
+  statement_id  = "AllowExecutionFromEventBridgeForScheduler"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.scheduler.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.revox_scheduler.arn
+}
 
 

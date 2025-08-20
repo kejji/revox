@@ -61,9 +61,18 @@ jobs:
             --outfile=../userSync.js
         working-directory: backend
 
+      - name: Bundle userSync with esbuild
+        run: |
+          npx esbuild scheduler.js \
+            --bundle \
+            --platform=node \
+            --target=node18 \
+            --outfile=../scheduler.js
+        working-directory: backend
+
       - name: Package bundle into zip
         run: |
-          zip revox-backend.zip index.js worker.js userSync.js
+          zip revox-backend.zip index.js worker.js userSync.js scheduler.js
 
       - name: Debug zip content
         run: unzip -l revox-backend.zip
@@ -89,6 +98,11 @@ jobs:
 
           aws lambda update-function-code \
             --function-name revox-user-sync \
+            --zip-file fileb://revox-backend.zip \
+            --region eu-west-3
+          
+          aws lambda update-function-code \
+            --function-name revox-scheduler \
             --zip-file fileb://revox-backend.zip \
             --region eu-west-3
 

@@ -5,7 +5,7 @@ dotenv.config();
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 
 const REGION    = process.env.AWS_REGION;
-const QUEUE_URL = process.env.EXTRACTION_QUEUE_URL; // à renommer plus tard -> INGEST_QUEUE_URL
+const QUEUE_URL = process.env.EXTRACTION_QUEUE_URL;
 
 const sqs = new SQSClient({ region: REGION });
 
