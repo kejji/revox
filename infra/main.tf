@@ -219,7 +219,13 @@ resource "aws_apigatewayv2_api" "http_api" {
   name          = "revox-api"
   protocol_type = "HTTP"
   cors_configuration {
-    allow_origins = ["http://localhost:8080", "https://lovable.dev", "https://preview--revox-frontend.lovable.app", "https://lovable.app", "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.lovableproject.com"]
+    allow_origins = ["http://localhost:8080", 
+                      "https://lovable.dev", 
+                      "https://preview--revox-frontend.lovable.app", 
+                      "https://lovable.app", 
+                      "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.lovableproject.com",
+                      "https://id-preview--c9a1ce22-5aa0-4154-9698-a80bfd723859.lovable.app"
+                    ]
     allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
     allow_headers = ["Authorization", "Content-Type"]
     max_age       = 600
