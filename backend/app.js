@@ -7,6 +7,7 @@ import { listReviews } from "./reviews.js";
 import { exportReviewsCsv } from "./reviewsExport.js";
 import { dispatchIncrementalIngest } from "./ingest.js";
 import { followApp, unfollowApp, getFollowedApps } from "./followApp.js";
+import { upsertSchedule, getSchedule, listSchedules } from "./schedule.js";
 
 import dotenv from "dotenv";
 dotenv.config();
@@ -84,6 +85,21 @@ app.delete("/follow-app", (req, res) => {
 app.get("/follow-app", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   getFollowedApps(req, res);
+});
+
+app.get("/ingest/schedule", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getSchedule(req, res);
+});
+
+app.put("/ingest/schedule", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  upsertSchedule(req, res);
+});
+
+app.get("/ingest/schedule/list", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  listSchedules(req, res);
 });
 
 export default app;
