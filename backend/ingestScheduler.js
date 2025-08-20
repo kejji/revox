@@ -5,7 +5,7 @@ import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION }));
 const sqs = new SQSClient({ region: process.env.AWS_REGION });
 
-const TABLE = process.env.APP_INGEST_SCHEDULE_TABLE;
+const TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
 const QUEUE = process.env.EXTRACTION_QUEUE_URL;
 
 const BATCH_SIZE = parseInt(process.env.SCHED_BATCH_SIZE || "100", 10);

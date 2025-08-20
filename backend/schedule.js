@@ -3,7 +3,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION }));
-const TABLE = process.env.APP_INGEST_SCHEDULE_TABLE;
+const TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
 const DEFAULT_INTERVAL = parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES || "120", 10);
 
 // Normalise le format de clé unifiée: "<platform>#<bundleId>"
