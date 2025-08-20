@@ -430,12 +430,12 @@ resource "aws_lambda_function" "user_sync" {
 }
 
 ########################################
-#  Ressource gérant la lambda scheduler
+#  Ressource gérant la lambda scheingest_schedulerduler
 ########################################
-resource "aws_lambda_function" "scheduler" {
-  function_name    = "revox-scheduler"
+resource "aws_lambda_function" "ingest_scheduler" {
+  function_name    = "revox-ingest-scheduler"
   role             = aws_iam_role.lambda_exec.arn
-  handler          = "scheduler.handler"
+  handler          = "ingestScheduler.handler"
   runtime          = "nodejs18.x"
   timeout          = 30
   filename         = "${path.module}/dummy.zip"
@@ -444,7 +444,7 @@ resource "aws_lambda_function" "scheduler" {
 
   environment {
     variables = {
-      APP_INGEST_SCHEDULE_TABLE        = aws_dynamodb_table.apps_ingest_schedule.name
+      APPS_INGEST_SCHEDULE_TABLE        = aws_dynamodb_table.apps_ingest_schedule.name
       EXTRACTION_QUEUE_URL             = aws_sqs_queue.extraction_queue.url
       DEFAULT_INGEST_INTERVAL_MINUTES  = var.default_ingest_interval_minutes
       SCHED_BATCH_SIZE                 = var.sched_batch_size
@@ -569,27 +569,27 @@ resource "aws_kms_key_policy" "lambda_env_policy" {
 }
 
 ########################################
-# EventBride Scheduler
+# EventBride Ingest Scheduler
 ########################################
 
-resource "aws_cloudwatch_event_rule" "revox_scheduler" {
-  name                = "revox-scheduler"
-  description         = "Planifie l’exécution de la Lambda revox-scheduler"
-  schedule_expression = var.scheduler_rate_expression
+resource "aws_cloudwatch_event_rule" "revox_ingest_scheduler" {
+  name                = "revox-ingest-scheduler"
+  description         = "Planifie l’exécution de la Lambda revox-ingest-scheduler"
+  schedule_expression = var.ingest_scheduler_rate_expression
 }
 
-resource "aws_cloudwatch_event_target" "revox_scheduler_target" {
-  rule      = aws_cloudwatch_event_rule.revox_scheduler.name
-  target_id = "revox-scheduler-lambda"
-  arn       = aws_lambda_function.scheduler.arn
+resource "aws_cloudwatch_event_target" "revox_ingest_scheduler_target" {
+  rule      = aws_cloudwatch_event_rule.revox_ingest_scheduler.name
+  target_id = "revox-ingest-scheduler-lambda"
+  arn       = aws_lambda_function.ingest_scheduler.arn
 }
 
-resource "aws_lambda_permission" "allow_events_to_invoke_scheduler" {
-  statement_id  = "AllowExecutionFromEventBridgeForScheduler"
+resource "aws_lambda_permission" "allow_events_to_invoke_ingest_scheduler" {
+  statement_id  = "AllowExecutionFromEventBridgeForIngestScheduler"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.scheduler.function_name
+  function_name = aws_lambda_function.ingest_scheduler.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.revox_scheduler.arn
+  source_arn    = aws_cloudwatch_event_rule.revox_ingest_scheduler.arn
 }
 
 

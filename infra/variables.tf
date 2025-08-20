@@ -29,7 +29,7 @@ variable "sched_lock_ms" {
   default = 600000 # 10 minutes
 }
 
-variable "scheduler_rate_expression" {
+variable "ingest_scheduler_rate_expression" {
   type    = string
   default = "rate(5 minutes)" # facile à changer sans redeploy de code
 }
