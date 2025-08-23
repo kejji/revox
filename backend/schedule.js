@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION }));
-const TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
+const TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE || "apps_ingest_schedule";
 const DEFAULT_INTERVAL = parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES || "120", 10);
 
 // Normalise le format de clé unifiée: "<platform>#<bundleId>"
