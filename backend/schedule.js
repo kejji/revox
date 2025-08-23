@@ -1,6 +1,8 @@
 // backend/schedule.js
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import dotenv from "dotenv";
+dotenv.config();
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION }));
 const TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
