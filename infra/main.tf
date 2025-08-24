@@ -430,7 +430,7 @@ resource "aws_lambda_function" "user_sync" {
 }
 
 ########################################
-#  Ressource gérant la lambda scheingest_schedulerduler
+#  Ressource gérant la lambda ingest_scheduler
 ########################################
 resource "aws_lambda_function" "ingest_scheduler" {
   function_name    = "revox-ingest-scheduler"
