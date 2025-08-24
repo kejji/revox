@@ -16,7 +16,7 @@ variable "aws_profile" {
 
 variable "default_ingest_interval_minutes" {
   type    = number
-  default = 120
+  default = 3
 }
 
 variable "sched_batch_size" {
@@ -31,5 +31,5 @@ variable "sched_lock_ms" {
 
 variable "ingest_scheduler_rate_expression" {
   type    = string
-  default = "rate(5 minutes)" # facile à changer sans redeploy de code
+  default = "rate(1 minutes)"
 }
