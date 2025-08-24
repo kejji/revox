@@ -8,10 +8,13 @@ const sqs = new SQSClient({ region: process.env.AWS_REGION });
 const TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE || "apps_ingest_schedule";
 console.log(`TABLE = ${TABLE}`);
 const QUEUE = process.env.EXTRACTION_QUEUE_URL;
-
+console.log(`QUEUE = ${QUEUE}`);
 const BATCH_SIZE = parseInt(process.env.SCHED_BATCH_SIZE || "100", 10);
+console.log(`BATCH_SIZE = ${BATCH_SIZE}`);
 const LOCK_MS = parseInt(process.env.SCHED_LOCK_MS || `${10 * 60 * 1000}`, 10);
+console.log(`LOCK_MS = ${LOCK_MS}`);
 const DEFAULT_INTERVAL_MIN = parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES || "120", 10);
+console.log(`DEFAULT_INTERVAL_MIN = ${DEFAULT_INTERVAL_MIN}`);
 
 export const handler = async () => {
   const t0 = Date.now();
