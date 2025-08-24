@@ -29,16 +29,15 @@ export async function upsertSchedule(req, res) {
     const interval = Number.isFinite(interval_minutes) ? Number(interval_minutes) : (current.Item?.interval_minutes ?? DEFAULT_INTERVAL);
     const isEnabled = typeof enabled === "boolean" ? enabled : (current.Item?.enabled ?? true);
 
-    // S'il n'existe pas, on le crée avec due_pk et un next_run_at légèrement échelonné
+    // S'il n'existe pas, on le crée avec due_pk et un next_run_at immédiat
     if (!current.Item) {
-      const jitter = Math.floor(Math.random() * interval * 60 * 1000); // 0..interval
       const item = {
         app_pk: pk,
         due_pk: "DUE",
         appName: appName,
         interval_minutes: interval,
         enabled: isEnabled,
-        next_run_at: now + jitter,
+        next_run_at: now,
         last_enqueued_at: 0
       };
       await ddb.send(new PutCommand({
