@@ -26,7 +26,7 @@ export const handler = async () => {
   }));
 
   for (const it of q.Items ?? []) {
-    const { app_pk, interval_minutes = parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES || "120", 10) } = it;
+    const { appName, app_pk, interval_minutes = parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES || "120", 10) } = it;
 
     try {
       // lock
@@ -50,6 +50,7 @@ export const handler = async () => {
       QueueUrl: QUEUE,
       MessageBody: JSON.stringify({
         mode: "incremental",
+        appName: appName,
         platform,
         bundleId,
         backfillDays: 2,

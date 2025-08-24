@@ -16,8 +16,8 @@ export async function upsertSchedule(req, res) {
     const userId = req.auth?.sub; // protégé par JWT
     if (!userId) return res.status(401).json({ error: "unauthorized" });
 
-    const { platform, bundleId, interval_minutes, enabled } = req.body || {};
-    if (!platform || !bundleId) return res.status(400).json({ error: "platform and bundleId are required" });
+    const { appName, platform, bundleId, interval_minutes, enabled } = req.body || {};
+    if (!appName || !platform || !bundleId) return res.status(400).json({ error: "appNae, platform and bundleId are required" });
 
     const pk = appPk(platform, bundleId);
 
@@ -35,6 +35,7 @@ export async function upsertSchedule(req, res) {
       const item = {
         app_pk: pk,
         due_pk: "DUE",
+        appName: appName,
         interval_minutes: interval,
         enabled: isEnabled,
         next_run_at: now + jitter,
