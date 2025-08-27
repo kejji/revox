@@ -1,7 +1,3 @@
-##########################
-# AWS Provider Settings
-##########################
-
 variable "aws_region" {
   description = "Région AWS"
   type        = string
@@ -16,7 +12,7 @@ variable "aws_profile" {
 
 variable "default_ingest_interval_minutes" {
   type    = number
-  default = 3
+  default = 30
 }
 
 variable "sched_batch_size" {
@@ -31,5 +27,5 @@ variable "sched_lock_ms" {
 
 variable "ingest_scheduler_rate_expression" {
   type    = string
-  default = "rate(1 minutes)"
+  default = "rate(5 minutes)"
 }
