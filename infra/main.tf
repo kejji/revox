@@ -365,6 +365,8 @@ resource "aws_lambda_function" "api" {
       EXTRACTION_QUEUE_URL = aws_sqs_queue.extraction_queue.url
       USER_FOLLOWS_TABLE = aws_dynamodb_table.user_follows.name
       APPS_METADATA_TABLE = aws_dynamodb_table.apps_metadata.name
+      APPS_INGEST_SCHEDULE_TABLE        = aws_dynamodb_table.apps_ingest_schedule.name
+      DEFAULT_INGEST_INTERVAL_MINUTES  = var.default_ingest_interval_minutes
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
@@ -444,9 +446,9 @@ resource "aws_lambda_function" "ingest_scheduler" {
 
   environment {
     variables = {
-      APPS_INGEST_SCHEDULE_TABLE        = aws_dynamodb_table.apps_ingest_schedule.name
       EXTRACTION_QUEUE_URL             = aws_sqs_queue.extraction_queue.url
       DEFAULT_INGEST_INTERVAL_MINUTES  = var.default_ingest_interval_minutes
+      APPS_INGEST_SCHEDULE_TABLE        = aws_dynamodb_table.apps_ingest_schedule.name
       SCHED_BATCH_SIZE                 = var.sched_batch_size
       SCHED_LOCK_MS                    = var.sched_lock_ms
     }
