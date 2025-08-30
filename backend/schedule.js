@@ -8,6 +8,17 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env
 const TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
 const DEFAULT_INTERVAL = parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10);
 
+
+// Helper pour ajouter les dates ISO lisibles
+function withIsoDates(item) {
+  if (!item) return item;
+  return {
+    ...item,
+    last_enqueued_at_iso: item.last_enqueued_at ? new Date(item.last_enqueued_at).toISOString() : null,
+    next_run_at_iso: item.next_run_at ? new Date(item.next_run_at).toISOString() : null,
+  };
+}
+
 // Normalise le format de clé unifiée: "<platform>#<bundleId>"
 const appPk = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
 
@@ -45,14 +56,14 @@ export async function upsertSchedule(req, res) {
         Item: item,
         ConditionExpression: "attribute_not_exists(app_pk)"
       }));
-      return res.status(201).json({ ok: true, schedule: item, created: true });
+      return res.status(201).json({ ok: true, schedule: withIsoDates(item), created: true });
     }
 
     // Sinon, mise à jour partielle (on ne touche pas next_run_at sauf si on vient de désactiver)
     const expr = [];
     const values = {};
     if (current.Item.interval_minutes !== interval) { expr.push("interval_minutes = :interval"); values[":interval"] = interval; }
-    if (current.Item.enabled !== isEnabled)         { expr.push("enabled = :enabled");           values[":enabled"]  = isEnabled; }
+    if (current.Item.enabled !== isEnabled) { expr.push("enabled = :enabled"); values[":enabled"] = isEnabled; }
 
     if (expr.length === 0) return res.json({ ok: true, schedule: current.Item, updated: false });
 
@@ -64,7 +75,7 @@ export async function upsertSchedule(req, res) {
       ReturnValues: "ALL_NEW"
     }));
 
-    return res.json({ ok: true, schedule: update.Attributes, updated: true });
+    return res.json({ ok: true, schedule: withIsoDates(update.Attributes), updated: true });
   } catch (e) {
     console.error("upsertSchedule error", e);
     return res.status(500).json({ error: "internal_error", details: String(e?.message || e) });
@@ -82,7 +93,7 @@ export async function getSchedule(req, res) {
     const pk = appPk(platform, bundleId);
     const out = await ddb.send(new GetCommand({ TableName: TABLE, Key: { app_pk: pk } }));
     if (!out.Item) return res.status(404).json({ error: "not_found" });
-    return res.json({ ok: true, schedule: out.Item });
+    return res.json({ ok: true, schedule: withIsoDates(out.Item) });
   } catch (e) {
     console.error("getSchedule error", e);
     return res.status(500).json({ error: "internal_error", details: String(e?.message || e) });
@@ -106,7 +117,7 @@ export async function listSchedules(req, res) {
 
     const nextCursor = out.LastEvaluatedKey ? Buffer.from(JSON.stringify(out.LastEvaluatedKey)).toString("base64") : null;
 
-    return res.json({ ok: true, items: out.Items || [], nextCursor });
+    return res.json({ ok: true, items: (out.Items || []).map(withIsoDates), nextCursor });
   } catch (e) {
     console.error("listSchedules error", e);
     return res.status(500).json({ error: "internal_error", details: String(e?.message || e) });

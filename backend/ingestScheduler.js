@@ -28,7 +28,8 @@ export const handler = async () => {
     batchSize: BATCH_SIZE,
     lockMs: LOCK_MS,
     defaultIntervalMin: DEFAULT_INTERVAL_MIN,
-    now
+    now,
+    nowIso: new Date(now).toISOString()
   }));
 
   let processed = 0, enqueued = 0, locked = 0, lockConflicts = 0, errors = 0;
@@ -68,9 +69,17 @@ export const handler = async () => {
     const appName = it.appName ?? null;
     const interval_minutes = Number.isFinite(it.interval_minutes) ? it.interval_minutes : DEFAULT_INTERVAL_MIN;
 
-    // (Optionnel) si tu veux stopper via enabled=false, décommente la ligne suivante
-    // if (it.enabled === false) { console.log(JSON.stringify({ msg: "skip.disabled", app_pk })); continue; }
+    if (it.enabled === false) { console.log(JSON.stringify({ msg: "skip.disabled", app_pk })); continue; }
 
+    // Log de l'item dû (avec ISO du next_run_at actuel)
+    if (it.next_run_at) {
+      console.log(JSON.stringify({
+        msg: "item.due",
+        app_pk,
+        nextRunAtCurrent: it.next_run_at,
+        nextRunAtCurrentIso: new Date(it.next_run_at).toISOString()
+      }));
+    }
     // 2a) Lock anti-doublon
     try {
       await ddb.send(new UpdateCommand({
@@ -82,7 +91,12 @@ export const handler = async () => {
         ExpressionAttributeValues: { ":now": now, ":until": now + LOCK_MS },
       }));
       locked++;
-      console.log(JSON.stringify({ msg: "lock.ok", app_pk }));
+      console.log(JSON.stringify({
+        msg: "lock.ok",
+        app_pk,
+        untilMs: now + LOCK_MS,
+        untilIso: new Date(now + LOCK_MS).toISOString()
+      }));
     } catch {
       lockConflicts++;
       console.log(JSON.stringify({ msg: "lock.conflict", app_pk }));
@@ -113,7 +127,7 @@ export const handler = async () => {
           Key: { app_pk },
           UpdateExpression: "REMOVE in_flight_until",
         }));
-      } catch {}
+      } catch { }
       console.log(JSON.stringify({ msg: "sqs.send.error", app_pk, error: String(e?.message || e) }));
       continue;
     }
@@ -131,7 +145,9 @@ export const handler = async () => {
         msg: "reschedule.ok",
         app_pk,
         nextRunAt: next,
-        nextRunIso: new Date(next).toISOString()
+        nextRunIso: new Date(next).toISOString(),
+        lastEnqueuedAt: now,
+        lastEnqueuedAtIso: new Date(now).toISOString()
       }));
     } catch (e) {
       errors++;
