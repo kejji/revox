@@ -1,4 +1,3 @@
-
 # 📱 Revox
 
 **Revox** est une application web (SaaS) qui permet d’extraire, analyser et exploiter les avis utilisateurs des apps mobiles publiés sur les stores (App Store & Google Play).  
@@ -11,9 +10,9 @@ Elle s’adresse principalement aux équipes Produit, Marketing ou Business pour
 
 ## 🧱 Architecture technique
 
-- **Frontend** : React + Vite + Amplify
-- **Backend** : Node.js (Express) + JWT + API Gateway (HTTP API)
-- **Infra** : AWS (Lambda, DynamoDB, SQS, Cognito, Terraform)
+- **Backend** : Node.js (Express) + JWT + API Gateway (HTTP API)  
+- **Infra** : AWS (Lambda, DynamoDB, SQS, Cognito, Terraform)  
+- **Frontend** : hébergé dans un autre repo (Lovable)
 
 ---
 
@@ -59,28 +58,11 @@ LOCAL=true
 
 ---
 
-### 4. Lancer le frontend
-```bash
-cd frontend
-cp .env.example .env
-npm install
-npm run dev
-```
-
-#### `.env` (extrait)
-```env
-COGNITO_USER_POOL_ID=...
-COGNITO_APP_CLIENT_ID=...
-API_URL=http://localhost:3000  # ou terraform output
-```
-
----
-
 ## 🔐 Authentification
 
-- Inscription / Connexion via **Cognito** (Amplify)
-- Email de vérification
-- Token JWT stocké côté client
+- Inscription / Connexion via **Cognito**  
+- Email de vérification  
+- Token JWT stocké côté client (géré par le frontend Lovable)  
 - Les routes backend sont protégées par header `Authorization: Bearer <token>`
 
 ---
@@ -96,11 +78,11 @@ Toutes les routes (sauf `/health` et `/search-app`) nécessitent un JWT valide.
 | `POST`  | `/follow-app`      | Suivre une application                 |
 | `DELETE`| `/follow-app`      | Ne plus suivre une application         |
 | `GET`   | `/follow-app`      | Liste des apps suivies                 |
-| `POST`  | `/reviews/ingest`  | Lancer une extraction des avis        |
+| `POST`  | `/reviews/ingest`  | Lancer une extraction des avis         |
 | `GET`   | `/reviews`         | Lister les avis d’une application      |
 | `GET`   | `/reviews/export`  | Exporter les avis au format CSV        |
 
-📄 Voir [`revox_api_doc.md`](https://github.com/kejji/revox/blob/main/backend/revox_api_doc.md) pour le détail des payloads & réponses.
+📄 Voir [`revox_api_doc.md`](backend/revox_api_doc.md) pour le détail des payloads & réponses.
 
 ---
 
@@ -113,7 +95,7 @@ Toutes les routes (sauf `/health` et `/search-app`) nécessitent un JWT valide.
 | `app_reviews`      | `app_pk`          | `ts_review`      | Avis utilisateurs                    |
 | `RevoxUsers`       | `id`              | —                | Utilisateurs Cognito                 |
 
-📄 Voir [`revox_dynamodb_doc.md`](https://github.com/kejji/revox/blob/main/infra/revox_dynamodb_doc.md) pour les schémas détaillés.
+📄 Voir [`revox_dynamodb_doc.md`](infra/revox_dynamodb_doc.md) pour les schémas détaillés.
 
 ---
 
@@ -123,8 +105,7 @@ Toutes les routes (sauf `/health` et `/search-app`) nécessitent un JWT valide.
 revox/
 ├── backend/       → Express + Lambda + SQS + API
 │   └── revox_api_doc.md
-├── frontend/      → React + Amplify
-├── infra/         → Terraform (Cognito, Gateway, DB)
+├── infra/         → Terraform (Cognito, Gateway, DB, queues, IAM)
 │   └── revox_dynamodb_doc.md
 └── README.md      → Ce fichier 😉
 ```
@@ -133,15 +114,31 @@ revox/
 
 ## 🛠 Technologies principales
 
-- **React** / **Vite** / **Tailwind** (UI)
-- **Amplify** / **Cognito** (auth)
-- **Express** (backend Node)
-- **Lambda** / **SQS** / **DynamoDB**
-- **Terraform** (infra as code)
-- **GitHub Actions** (CI/CD prévu)
+- **Express** (backend Node)  
+- **Lambda** / **SQS** / **DynamoDB**  
+- **Cognito** (auth)  
+- **Terraform** (infra as code)  
+- **GitHub Actions** (CI/CD pour le backend)  
+- **Frontend** séparé, géré dans un autre repo via **Lovable**
+
+---
+
+## ⚙️ Configuration CORS
+
+Les origines autorisées sont paramétrables via la variable Terraform `allowed_origins`.  
+⚠️ Pense à inclure les URLs Lovable de ton frontend (préprod, preview, prod).  
+Exemple :  
+```hcl
+allowed_origins = [
+  "http://localhost:8080",
+  "https://lovable.dev",
+  "https://preview--<slug>.lovable.app",
+  "https://<uuid>.lovableproject.com"
+]
+```
 
 ---
 
 ## 🗓️ Dernière mise à jour
 
-📅 Août 2025
+📅 Septembre 2025
