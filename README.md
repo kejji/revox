@@ -1,6 +1,6 @@
 # 📱 Revox — Backend (API + BDD)
 
-**Revox** est le **backend** d’une application SaaS qui extrait et analyse les avis utilisateurs des apps mobiles (App Store & Google Play).  
+**Revox** est un **backend** d’une application SaaS qui extrait et analyse les avis utilisateurs des apps mobiles (App Store & Google Play).  
 Il expose une **API sécurisée** consommée par un frontend externe (Lovable).
 
 ---
@@ -29,13 +29,15 @@ Authorization: Bearer <JWT_TOKEN>
 
 ---
 
-## 📘 API Reference
+## 📘 API
 
-> **toutes** les routes ci‑dessous (hors `/health` et `/search-app`) requièrent un JWT.
+> **Toutes** les routes ci‑dessous (hors `/health` et `/search-app`) requièrent un JWT.
 
 ### 🟢 Health
 **GET** `/health`  
-Réponse :
+**Description** : Vérifie que l’API est en ligne et opérationnelle. Utile pour les sondes de monitoring.  
+
+Réponse :
 ```json
 { "status": "OK" }
 ```
@@ -43,7 +45,8 @@ Réponse :
 ---
 
 ### 🔎 Recherche d’apps
-**GET** `/search-app`
+**GET** `/search-app`  
+**Description** : Permet de rechercher une app sur les stores iOS et Android à partir d’un mot-clé.  
 
 | Paramètre | Type   | Requis | Exemple  |
 |---|---|---|---|
@@ -60,7 +63,8 @@ Réponse :
 ---
 
 ### ⭐ Suivre une app
-**POST** `/follow-app`
+**POST** `/follow-app`  
+**Description** : Associe l’app à l’utilisateur et déclenche automatiquement un job de planification (`PUT /ingest/schedule`). Idempotent : si l’app est déjà suivie, la réponse indique `already: true`.  
 
 **Body (JSON)**
 ```json
@@ -69,13 +73,18 @@ Réponse :
 
 **Réponse**
 ```json
-{ "ok": true, "followed": { "bundleId": "com.instagram.android", "platform": "android", "followedAt": "2025-09-01T12:34:56Z" } }
+{
+  "ok": true,
+  "followed": { "bundleId": "com.instagram.android", "platform": "android", "followedAt": "2025-09-01T12:34:56Z" },
+  "schedule": { "created": true, "already": false }
+}
 ```
 
 ---
 
 ### ❌ Ne plus suivre une app
-**DELETE** `/follow-app`
+**DELETE** `/follow-app`  
+**Description** : Supprime le lien entre l’utilisateur et une app, sans supprimer les données existantes.  
 
 **Body (JSON)**
 ```json
@@ -90,7 +99,8 @@ Réponse :
 ---
 
 ### 📄 Lister les apps suivies
-**GET** `/follow-app`
+**GET** `/follow-app`  
+**Description** : Retourne toutes les apps suivies par l’utilisateur, enrichies avec nom et icône.  
 
 **Réponse**
 ```json
@@ -104,7 +114,8 @@ Réponse :
 ---
 
 ### 🗂 Lancer une ingestion d’avis
-**POST** `/reviews/ingest`
+**POST** `/reviews/ingest`  
+**Description** : Déclenche manuellement l’ingestion des avis d’une app. Peut être utilisé pour forcer un backfill sur une période donnée.  
 
 **Body (JSON)**
 ```json
@@ -122,22 +133,40 @@ Réponse :
 ---
 
 ### 💬 Récupérer les avis
-**GET** `/reviews`
+**GET** `/reviews`  
+**Description** : Récupère les avis stockés en base pour une app donnée. Supporte la **pagination avec curseur** : la réponse contient `nextCursor` qu’il faut réutiliser comme paramètre `cursor` dans l’appel suivant pour obtenir la page suivante.  
 
-| Paramètre | Type | Requis | Exemple |
-|---|---|---|---|
-| `platform` | `ios`\|`android` | ✅ | `android` |
-| `bundleId` | string | ✅ | `com.instagram.android` |
-| `limit` | number |  | `50` |
-| `from` / `to` | ISO date |  | `2025-08-01T00:00:00Z` |
-| `order` | `asc`\|`desc` |  | `desc` |
+**Query params** :  
+| Paramètre   | Type             | Requis | Exemple |
+|-------------|------------------|--------|---------|
+| `platform`  | `ios`\|`android` | ✅      | `android` |
+| `bundleId`  | string           | ✅      | `com.fortuneo.android` |
+| `limit`     | number           | optionnel | `50` |
+| `from` / `to` | ISO date       | optionnel | `2025-08-01T00:00:00Z` |
+| `order`     | `asc`\|`desc`    | optionnel | `desc` |
+| `cursor`    | string (opaque)  | optionnel | jeton renvoyé par l’appel précédent |
 
-**Exemple réponse**
+**Exemple de réponse** :  
 ```json
 {
   "items": [
-    { "date":"2025-09-01T00:00:00Z","rating":4,"text":"Great app!","user_name":"Anonymous","app_version":"298.0.0" }
-  ]
+    {
+      "app_pk": "android#com.fortuneo.android",
+      "date": "2025-09-02T08:24:45.612Z",
+      "rating": 5,
+      "platform": "android",
+      "ts_review": "2025-09-02T08:24:45.612Z#5wbata",
+      "app_name": "Fortuneo - la banque en ligne",
+      "ingested_at": "2025-09-03T08:46:10.193Z",
+      "app_version": "10.20.0",
+      "text": "superbe banque 👍",
+      "source": "store-scraper-v1",
+      "user_name": "Maurice jean Claude Airaudo",
+      "bundle_id": "com.fortuneo.android"
+    }
+  ],
+  "nextCursor": "eyJhcHBfcGsiOiJhbmRyb2lkI2NvbS5mb3J0dW5lby5hbmRyb2lkIiwidHNfcmV2aWV3IjoiMjAyNS0wOS0wMVQwOToxOTowNS41ODBaIzFmcGpnMm4ifQ==",
+  "count": 5
 }
 ```
 
@@ -145,68 +174,35 @@ Réponse :
 
 ### 📤 Export CSV des avis
 **GET** `/reviews/export`  
-🔁 Identique à `/reviews` côté paramètres. Réponse : fichier `.csv`.
+**Description** : Identique à `/reviews`, mais retourne un fichier CSV. Pratique pour exploitation externe (Excel, BI).  
 
 ---
 
 ### ⏱️ Programmer l’ingestion
-**PUT** `/ingest/schedule`
+**PUT** `/ingest/schedule`  
+**Description** : Crée ou met à jour un job d’ingestion récurrent pour une app suivie. Intervalle en minutes configurable.  
 
 **Body (JSON)**
 ```json
 { "bundleId": "com.instagram.android", "platform": "android", "intervalMinutes": 30 }
 ```
 
-**Réponse**
-```json
-{
-  "ok": true,
-  "scheduled": {
-    "appName": "Instagram",
-    "app_pk": "android#com.instagram.android",
-    "enabled": true,
-    "interval_minutes": 30,
-    "last_enqueued_at": 1756742462690,
-    "next_run_at": 1756744262690,
-    "last_enqueued_at_iso": "2025-09-01T16:01:02.690Z",
-    "next_run_at_iso": "2025-09-01T16:31:02.690Z",
-    "due_pk": "DUE"
-  }
-}
-```
-
 ---
 
 ### 📊 Consulter la planification d’une app
-**GET** `/ingest/schedule`
+**GET** `/ingest/schedule`  
+**Description** : Retourne la configuration d’ingestion planifiée pour une app spécifique (interval, last run, next run).  
 
 | Paramètre | Type | Requis | Exemple |
 |---|---|---|---|
 | `bundleId` | string | ✅ | `com.instagram.android` |
 | `platform` | `ios`\|`android` | ✅ | `android` |
 
-**Réponse**
-```json
-{
-  "ok": true,
-  "schedule": {
-    "appName": "Instagram",
-    "app_pk": "android#com.instagram.android",
-    "enabled": true,
-    "interval_minutes": 30,
-    "last_enqueued_at": 1756742462690,
-    "next_run_at": 1756744262690,
-    "last_enqueued_at_iso": "2025-09-01T16:01:02.690Z",
-    "next_run_at_iso": "2025-09-01T16:31:02.690Z",
-    "due_pk": "DUE"
-  }
-}
-```
-
 ---
 
 ### 📋 Lister tous les jobs planifiés
-**GET** `/ingest/schedule/list`
+**GET** `/ingest/schedule/list`  
+**Description** : Liste l’ensemble des jobs d’ingestion planifiés pour l’utilisateur. Supporte un paramètre `limit`.  
 
 **Réponse (réel)**  
 ```json
