@@ -1,6 +1,6 @@
 # 📱 Revox — Backend (API + BDD)
 
-**Revox** est un **backend** d’une application SaaS qui extrait et analyse les avis utilisateurs des apps mobiles (App Store & Google Play).  
+**Revox** est un **backend** qui extrait et analyse les avis utilisateurs des apps mobiles (App Store & Google Play).  
 Il expose une **API sécurisée** consommée par un frontend externe (Lovable).
 
 ---
@@ -227,7 +227,7 @@ Réponse :
 
 ---
 
-## 🗃️ Tables DynamoDB (résumé)
+## 🗃️ Tables DynamoDB
 
 | Table                 | PK            | SK         | Description                          |
 |---|---|---|---|
