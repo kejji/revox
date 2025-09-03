@@ -1,155 +1,247 @@
-# 📱 Revox — Backend
+# 📱 Revox — Backend (API + BDD)
 
-**Revox** est le **backend** d’une application SaaS permettant d’extraire, analyser et exploiter les avis utilisateurs des apps mobiles publiés sur les stores (App Store & Google Play).  
-Il fournit une **API REST sécurisée** consommée par un frontend externe (hébergé sur Lovable).
-
-Ce backend s’adresse principalement aux équipes Produit, Marketing ou Business pour :
-- suivre les avis utilisateurs dans le temps,
-- détecter les incidents ou besoins récurrents,
-- prioriser les développements à venir.
+**Revox** est le **backend** d’une application SaaS qui extrait et analyse les avis utilisateurs des apps mobiles (App Store & Google Play).  
+Il expose une **API sécurisée** consommée par un frontend externe (Lovable).
 
 ---
 
-## 🧱 Architecture technique
+## ⚙️ Architecture & Démarrage rapide
 
-- **Backend** : Node.js (Express) + JWT + API Gateway (HTTP API)  
-- **Infra** : AWS (Lambda, DynamoDB, SQS, Cognito, Terraform)  
-- **Frontend** : séparé, dans un autre repo (Lovable)
+- **Backend** : Node.js (Express) + JWT
+- **Infra** : AWS (Lambda, API Gateway HTTP API, DynamoDB, SQS, Cognito) via Terraform
+- **Frontend** : séparé (Lovable)
 
----
-
-## 🚀 Démarrage local
-
-### 1. Cloner le projet
 ```bash
 git clone https://github.com/kejji/revox.git
-cd revox
-```
-
-### 2. Provisionner l’infrastructure (Terraform)
-```bash
-cd infra
-terraform init
-terraform apply
-```
-📌 À la fin, note bien :
-- `cognito_user_pool_id`
-- `cognito_app_client_id`
-- `extraction_queue_url`
-- `http_api_endpoint`
-
----
-
-### 3. Lancer le backend en local
-```bash
-cd backend
-cp .env.example .env
-npm install
-npm run dev
-```
-
-#### `.env` (extrait)
-```env
-AWS_REGION=eu-west-3
-COGNITO_USER_POOL_ID=...
-COGNITO_APP_CLIENT_ID=...
-EXTRACTION_QUEUE_URL=...
-EXTRACTIONS_TABLE=revox_extractions
-LOCAL=true
+cd revox/infra && terraform init && terraform apply
+cd ../backend && cp .env.example .env && npm install && npm run dev
 ```
 
 ---
 
 ## 🔐 Authentification
 
-- Authentification via **Cognito**  
-- Email de vérification et gestion des utilisateurs côté Cognito  
-- Token JWT à inclure dans l’en-tête `Authorization: Bearer <token>` pour appeler les routes protégées  
-- Le frontend (Lovable) gère la session utilisateur et envoie le JWT aux appels API
-
----
-
-## 📘 API REST
-
-Toutes les routes (sauf `/health` et `/search-app`) nécessitent un JWT valide.
-
-| Méthode | Route                      | Description                                             |
-|--------:|----------------------------|---------------------------------------------------------|
-| `GET`   | `/health`                  | Vérifie l’état du backend                               |
-| `GET`   | `/search-app`              | Recherche d’apps par nom                                |
-| `POST`  | `/follow-app`              | Suivre une application                                  |
-| `DELETE`| `/follow-app`              | Ne plus suivre une application                          |
-| `GET`   | `/follow-app`              | Liste des apps suivies                                  |
-| `POST`  | `/reviews/ingest`          | Lancer une extraction des avis                          |
-| `GET`   | `/reviews`                 | Lister les avis d’une application                       |
-| `GET`   | `/reviews/export`          | Exporter les avis au format CSV                         |
-| `PUT`   | `/ingest/schedule`         | Planifier / mettre à jour le job d’ingestion d’une app  |
-| `GET`   | `/ingest/schedule`         | Récupérer l’état/planification d’une app suivie         |
-| `GET`   | `/ingest/schedule/list`    | Lister **tous** les jobs d’ingestion planifiés          |
-
-> Détails des payloads/params dans [`backend/revox_api_doc.md`](backend/revox_api_doc.md).  
-> Les endpoints `ingest/schedule*` s’appuient sur une Lambda **ingestScheduler** + EventBridge.
-
----
-
-## 🗃️ Schéma des tables DynamoDB
-
-Les tables ci-dessous sont provisionnées par Terraform.
-
-| Table                    | Partition key (`PK`) | Sort key (`SK`) | Description |
-|--------------------------|----------------------|-----------------|-------------|
-| `revox_users`            | `id`                 | —               | Utilisateurs (métadonnées côté backend pour Cognito) |
-| `revox_user_follows`     | `user_id`            | `app_pk`        | Lien utilisateur → applications suivies |
-| `apps_metadata`          | `app_pk`             | —               | Métadonnées d’app (nom, icône, store ids…) |
-| `revox_app_reviews`      | `app_pk`             | `ts_review`     | Avis utilisateurs ingérés (triés par timestamp) |
-| `apps_ingest_schedule`   | `app_pk`             | `next_run_at`   | Planification des jobs d’ingestion par app |
-| `revox-terraform-locks`* | `LockID`             | —               | (Interne Terraform) table de lock du state |
-
-\* Table interne à Terraform, **ne pas** l’utiliser dans l’application.
-
----
-
-## 📁 Structure du projet
-
+- Auth via **Cognito**.  
+- Joindre le JWT dans chaque requête protégée :
 ```
-revox/
-├── backend/       → Express + Lambda + API
-│   └── revox_api_doc.md
-├── infra/         → Terraform (Cognito, Gateway, DB, queues, IAM)
-│   └── revox_dynamodb_doc.md
-└── README.md      → Ce fichier 😉
+Authorization: Bearer <JWT_TOKEN>
 ```
 
 ---
 
-## 🛠 Technologies principales
+## 📘 API Reference
 
-- **Express** (backend Node)  
-- **Lambda** / **SQS** / **DynamoDB**  
-- **Cognito** (auth)  
-- **Terraform** (infra as code)  
-- **GitHub Actions** (CI/CD backend)  
-- **Frontend** séparé, développé et maintenu via **Lovable**
+> **toutes** les routes ci‑dessous (hors `/health` et `/search-app`) requièrent un JWT.
+
+### 🟢 Health
+**GET** `/health`  
+Réponse :
+```json
+{ "status": "OK" }
+```
 
 ---
 
-## ⚙️ Configuration CORS
+### 🔎 Recherche d’apps
+**GET** `/search-app`
 
-Les origines autorisées sont paramétrables via la variable Terraform `allowed_origins`.  
-⚠️ Inclure les URLs Lovable du frontend (préprod, preview, prod).
+| Paramètre | Type   | Requis | Exemple  |
+|---|---|---|---|
+| `query` | string | ✅ | `notion` |
 
-Exemple :  
-```hcl
-allowed_origins = [
-  "http://localhost:8080",
-  "https://lovable.dev",
-  "https://preview--<slug>.lovable.app",
-  "https://<uuid>.lovableproject.com"
+**Exemple réponse**
+```json
+[
+  { "store":"ios","name":"Notion","id":"123456","bundleId":"com.notionlabs.Notion","icon":"https://..." },
+  { "store":"android","name":"Notion","id":"com.notion.android","bundleId":"com.notion.android","icon":"https://..." }
 ]
 ```
 
 ---
 
-## 🗓️ Dernière mise à jour
+### ⭐ Suivre une app
+**POST** `/follow-app`
 
-📅 Septembre 2025
+**Body (JSON)**
+```json
+{ "bundleId": "com.instagram.android", "platform": "android" }
+```
+
+**Réponse**
+```json
+{ "ok": true, "followed": { "bundleId": "com.instagram.android", "platform": "android", "followedAt": "2025-09-01T12:34:56Z" } }
+```
+
+---
+
+### ❌ Ne plus suivre une app
+**DELETE** `/follow-app`
+
+**Body (JSON)**
+```json
+{ "bundleId": "com.instagram.android", "platform": "android" }
+```
+
+**Réponse**
+```json
+{ "ok": true, "unfollowed": { "bundleId": "com.instagram.android", "platform": "android" } }
+```
+
+---
+
+### 📄 Lister les apps suivies
+**GET** `/follow-app`
+
+**Réponse**
+```json
+{
+  "followed": [
+    { "bundleId":"com.instagram.android","platform":"android","name":"Instagram","icon":"https://..." }
+  ]
+}
+```
+
+---
+
+### 🗂 Lancer une ingestion d’avis
+**POST** `/reviews/ingest`
+
+**Body (JSON)**
+```json
+{ "bundleId": "com.instagram.android", "platform": "android", "appName": "Instagram", "backfillDays": 2 }
+```
+
+**Réponse**
+```json
+{
+  "ok": true,
+  "queued": { "mode":"incremental","appName":"Instagram","platform":"android","bundleId":"com.instagram.android","backfillDays":2 }
+}
+```
+
+---
+
+### 💬 Récupérer les avis
+**GET** `/reviews`
+
+| Paramètre | Type | Requis | Exemple |
+|---|---|---|---|
+| `platform` | `ios`\|`android` | ✅ | `android` |
+| `bundleId` | string | ✅ | `com.instagram.android` |
+| `limit` | number |  | `50` |
+| `from` / `to` | ISO date |  | `2025-08-01T00:00:00Z` |
+| `order` | `asc`\|`desc` |  | `desc` |
+
+**Exemple réponse**
+```json
+{
+  "items": [
+    { "date":"2025-09-01T00:00:00Z","rating":4,"text":"Great app!","user_name":"Anonymous","app_version":"298.0.0" }
+  ]
+}
+```
+
+---
+
+### 📤 Export CSV des avis
+**GET** `/reviews/export`  
+🔁 Identique à `/reviews` côté paramètres. Réponse : fichier `.csv`.
+
+---
+
+### ⏱️ Programmer l’ingestion
+**PUT** `/ingest/schedule`
+
+**Body (JSON)**
+```json
+{ "bundleId": "com.instagram.android", "platform": "android", "intervalMinutes": 30 }
+```
+
+**Réponse**
+```json
+{
+  "ok": true,
+  "scheduled": {
+    "appName": "Instagram",
+    "app_pk": "android#com.instagram.android",
+    "enabled": true,
+    "interval_minutes": 30,
+    "last_enqueued_at": 1756742462690,
+    "next_run_at": 1756744262690,
+    "last_enqueued_at_iso": "2025-09-01T16:01:02.690Z",
+    "next_run_at_iso": "2025-09-01T16:31:02.690Z",
+    "due_pk": "DUE"
+  }
+}
+```
+
+---
+
+### 📊 Consulter la planification d’une app
+**GET** `/ingest/schedule`
+
+| Paramètre | Type | Requis | Exemple |
+|---|---|---|---|
+| `bundleId` | string | ✅ | `com.instagram.android` |
+| `platform` | `ios`\|`android` | ✅ | `android` |
+
+**Réponse**
+```json
+{
+  "ok": true,
+  "schedule": {
+    "appName": "Instagram",
+    "app_pk": "android#com.instagram.android",
+    "enabled": true,
+    "interval_minutes": 30,
+    "last_enqueued_at": 1756742462690,
+    "next_run_at": 1756744262690,
+    "last_enqueued_at_iso": "2025-09-01T16:01:02.690Z",
+    "next_run_at_iso": "2025-09-01T16:31:02.690Z",
+    "due_pk": "DUE"
+  }
+}
+```
+
+---
+
+### 📋 Lister tous les jobs planifiés
+**GET** `/ingest/schedule/list`
+
+**Réponse (réel)**  
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "appName": "Fortuneo - la banque en ligne",
+      "app_pk": "android#com.fortuneo.android",
+      "enabled": true,
+      "interval_minutes": 30,
+      "last_enqueued_at": 1756742462690,
+      "next_run_at": 1756744262690,
+      "due_pk": "DUE",
+      "last_enqueued_at_iso": "2025-09-01T16:01:02.690Z",
+      "next_run_at_iso": "2025-09-01T16:31:02.690Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+---
+
+## 🗃️ Tables DynamoDB (résumé)
+
+| Table                 | PK            | SK         | Description                          |
+|---|---|---|---|
+| `revox_user_follows`  | `user_id`     | `app_pk`   | Lien user → apps suivies             |
+| `apps_metadata`       | `app_key`     | —          | Nom, icône, store ids…               |
+| `revox_app_reviews`   | `app_pk`      | `ts_review`| Avis utilisateurs ingérés            |
+| `revox_users`         | `id`          | —          | Utilisateurs Cognito                  |
+| `apps_ingest_schedule`| `app_pk`      | `due_pk`   | Planification des jobs d’ingestion    |
+
+---
+
+## 🗓️ Dernière mise à jour
+Septembre 2025
