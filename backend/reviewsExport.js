@@ -1,4 +1,3 @@
-// backend/reviewsExport.js
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
@@ -7,103 +6,110 @@ const ddb = DynamoDBDocumentClient.from(
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
-// Petit helper CSV (échappement basique: " → "" et mettre entre guillemets si nécessaire)
+const REVIEWS_TABLE = process.env.REVIEWS_TABLE || process.env.REVOX_REVIEWS_TABLE || "revox_app_reviews";
+
 function csvEscape(val) {
   if (val === null || val === undefined) return "";
-  const str = String(val);
-  const mustQuote = /[",\n\r]/.test(str);
-  const escaped = str.replace(/"/g, '""');
-  return mustQuote ? `"${escaped}"` : escaped;
+  const s = String(val);
+  const mustQuote = /[",\n\r]/.test(s);
+  const esc = s.replace(/"/g, '""');
+  return mustQuote ? `"${esc}"` : esc;
 }
-
-function writeHeader(res, fileBaseName = "reviews_export") {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `${fileBaseName}_${ts}.csv`;
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  // BOM UTF-8 pour Excel
-  res.write("\uFEFF");
-  // Entêtes
-  res.write([
-    "app_name","platform","date","rating","text","user_name",
-    "app_version","bundle_id"
-  ].join(",") + "\n");
+function parseAppsFromQuery(qs) {
+  const v = qs.app_pk;
+  if (!v) return [];
+  const arr = String(v).split(",").map(x => x.trim()).filter(Boolean);
+  return Array.from(new Set(arr));
 }
 
 export async function exportReviewsCsv(req, res) {
   try {
-    const { platform, bundleId, from, to, order = "desc", pageSize = "200" } = req.query;
-    if (!platform || !bundleId) {
-      return res.status(400).json({ error: "platform et bundleId sont requis" });
-    }
-    if (!!from !== !!to) {
-      return res.status(400).json({ error: "from et to doivent être fournis ensemble (ISO 8601)" });
+    const qs = req.query || {};
+    const appPks = parseAppsFromQuery(qs);
+    if (!appPks.length) {
+      return res.status(400).json({ error: "Paramètre requis: app_pk (valeur unique ou liste séparée par des virgules)" });
     }
 
-    // Sécurité/limites : taille de page max et garde-fou sur le nombre de pages pour ne pas dépasser le timeout
-    const Limit = Math.max(1, Math.min(parseInt(pageSize, 10) || 200, 500));
-    const MAX_PAGES = 2000; // ~2000*200 = 400k lignes max, ajuste selon ton timeout
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="reviews.csv"`);
 
-    const app_pk = `${String(platform).toLowerCase()}#${bundleId}`;
-    const ScanIndexForward = order !== "desc"; // desc => false
+    // En-tête CSV (adapte si besoin)
+    res.write([
+      "app_pk","platform","bundle_id","date","ts_review","rating","user_name","app_version","source","text"
+    ].join(",") + "\n");
 
-    const hasRange = !!(from && to);
-    const KeyConditionExpression = hasRange
-      ? "app_pk = :pk AND ts_review BETWEEN :from AND :to"
-      : "app_pk = :pk";
+    const pickKey = (r) => r?.date || r?.ts_review || "";
+    const perAppKeys = Object.fromEntries(appPks.map(pk => [pk, undefined])); // ESK par app
+    const buffers = Object.fromEntries(appPks.map(pk => [pk, []]));
+    const heads = Object.fromEntries(appPks.map(pk => [pk, 0]));
 
-    const ExpressionAttributeValues = hasRange
-      ? { ":pk": app_pk, ":from": `${from}#`, ":to": `${to}#z` }
-      : { ":pk": app_pk };
-
-    writeHeader(res, `${platform}_${bundleId}`);
-
-    let ExclusiveStartKey = undefined;
-    let pages = 0;
-    do {
+    const refill = async (pk, limit=200) => {
       const out = await ddb.send(new QueryCommand({
-        TableName: process.env.APP_REVIEWS_TABLE,
-        KeyConditionExpression,
-        ExpressionAttributeValues,
-        ScanIndexForward,
-        Limit,
-        ExclusiveStartKey
+        TableName: REVIEWS_TABLE,
+        KeyConditionExpression: "app_pk = :apk",
+        ExpressionAttributeValues: { ":apk": pk },
+        ScanIndexForward: false,
+        Limit: limit,
+        ExclusiveStartKey: perAppKeys[pk]
       }));
+      buffers[pk] = out.Items || [];
+      heads[pk] = 0;
+      perAppKeys[pk] = out.LastEvaluatedKey;
+    };
 
-      const items = out.Items ?? [];
-      for (const it of items) {
-        // Écrire une ligne CSV
-        res.write([
-          csvEscape(it.app_name),
-          csvEscape(it.platform),
-          csvEscape(it.date),
-          csvEscape(it.rating),
-          csvEscape(it.text),
-          csvEscape(it.user_name),
-          csvEscape(it.app_version),
-          csvEscape(it.bundle_id)
-        ].join(",") + "\n");
+    // prime buffers
+    await Promise.all(appPks.map(pk => refill(pk)));
+
+    while (true) {
+      let best = null, bestPk = null;
+      for (const pk of appPks) {
+        const buf = buffers[pk];
+        const i = heads[pk];
+        if (i >= buf.length) continue;
+        const cand = buf[i];
+        if (!best || String(pickKey(cand)) > String(pickKey(best))) {
+          best = cand; bestPk = pk;
+        }
       }
 
-      ExclusiveStartKey = out.LastEvaluatedKey;
-      pages += 1;
-
-      // Garde-fou
-      if (pages >= MAX_PAGES && ExclusiveStartKey) {
-        // On indique au client qu'il reste des données (taille trop grande pour un export synchrone)
-        res.write(`# TRUNCATED after ${pages} pages - please use async export\n`);
-        break;
+      if (!best) {
+        let refilled = false;
+        for (const pk of appPks) {
+          if (heads[pk] >= buffers[pk].length && perAppKeys[pk]) {
+            await refill(pk);
+            if (buffers[pk].length) refilled = true;
+          }
+        }
+        if (!refilled) break;
+        continue;
       }
-    } while (ExclusiveStartKey);
+
+      const platform = best.platform || String(best.app_pk || bestPk).split("#", 2)[0];
+      const bundleId = best.bundle_id || String(best.app_pk || bestPk).split("#", 2)[1];
+
+      res.write([
+        csvEscape(best.app_pk || bestPk),
+        csvEscape(platform),
+        csvEscape(bundleId),
+        csvEscape(best.date || ""),
+        csvEscape(best.ts_review || ""),
+        csvEscape(best.rating ?? ""),
+        csvEscape(best.user_name || ""),
+        csvEscape(best.app_version || ""),
+        csvEscape(best.source || ""),
+        csvEscape(best.text || "")
+      ].join(",") + "\n");
+
+      heads[bestPk]++;
+      if (heads[bestPk] >= buffers[bestPk].length && perAppKeys[bestPk]) {
+        await refill(bestPk);
+      }
+    }
 
     res.end();
   } catch (e) {
-    console.error("Export CSV error:", e);
-    // Si on a déjà écrit des headers, on ne peut plus changer le code HTTP — on termine proprement.
-    if (!res.headersSent) {
-      res.status(500).json({ error: e.message || "Erreur serveur" });
-    } else {
-      res.end(`\n# ERROR: ${e.message || "Erreur serveur"}`);
-    }
+    console.error("exportReviewsCsv error:", e);
+    if (!res.headersSent) res.status(500).json({ error: e.message || "Erreur serveur" });
+    else res.end(`\n# ERROR: ${e.message || "Erreur serveur"}`);
   }
 }
