@@ -2,7 +2,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, DeleteCommand, QueryCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { searchAppMetadata } from "./searchAppMetadata.js";
-
+import { getLinks } from "./appLinks.js";
 
 const REGION = process.env.AWS_REGION;
 const USER_FOLLOWS_TABLE = process.env.USER_FOLLOWS_TABLE;
@@ -145,28 +145,31 @@ export async function getFollowedApps(req, res) {
 
     const items = result.Items ?? [];
     if (!items.length) return res.status(200).json({ followed: [] });
+    // Charger les liens (fusions) une seule fois
+    const linksMap = await getLinks(userId); // { [app_pk]: string[] }
+    const dedup = (arr) => Array.from(new Set(Array.isArray(arr) ? arr : []));
+    // Filtrer pour ne garder que les lignes de suivi (SK = app_pk réel)
+    const follows = items.filter(it => it.app_pk && it.app_pk !== "APP_LINKS");
 
-    // Récupérer toutes les app_pk
-    const appKeys = items.map(item => item.app_pk);
-
-    // Récupérer les métadonnées en parallèle
-    const enriched = await Promise.all(appKeys.map(async (appKey) => {
-      const [platform, bundleId] = appKey.split("#");
+    // Enrichissement apps_metadata + ajout linked_app_pks
+    const enriched = await Promise.all(follows.map(async (it) => {
+      const appKey = it.app_pk;
+      const [platform, bundleId] = appKey.split("#", 2);
       try {
         const meta = await ddb.send(new GetCommand({
           TableName: APPS_METADATA_TABLE,
           Key: { app_pk: appKey }
         }));
-
         return {
           bundleId,
           platform,
           name: meta.Item?.name || null,
-          icon: meta.Item?.icon || null
+          icon: meta.Item?.icon || null,
+          linked_app_pks: dedup(linksMap[appKey])
         };
       } catch (err) {
         console.warn("getFollowedApps: erreur meta pour", appKey, err.message);
-        return { bundleId, platform, name: null, icon: null };
+        return { bundleId, platform, name: null, icon: null, linked_app_pks: dedup(linksMap[appKey]) };
       }
     }));
 

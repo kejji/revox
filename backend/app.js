@@ -8,6 +8,7 @@ import { exportReviewsCsv } from "./reviewsExport.js";
 import { dispatchIncrementalIngest } from "./ingest.js";
 import { followApp, unfollowApp, getFollowedApps } from "./followApp.js";
 import { upsertSchedule, getSchedule, listSchedules } from "./schedule.js";
+import { mergeApps, unmergeApps } from "./appsMerge.js";
 
 import dotenv from "dotenv";
 dotenv.config();
@@ -100,6 +101,16 @@ app.put("/ingest/schedule", (req, res) => {
 app.get("/ingest/schedule/list", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   listSchedules(req, res);
+});
+
+app.post("/apps/merge", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  mergeApps(req, res);
+});
+
+app.delete("/apps/merge", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  unmergeApps(req, res);
 });
 
 export default app;
