@@ -22,16 +22,64 @@ cd ../backend && cp .env.example .env && npm install && npm run dev
 ## 🔐 Authentification
 
 - Auth via **Cognito**.  
-- Joindre le JWT dans chaque requête protégée :
+- Joindre le JWT dans chaque requête protégée :
 ```
 Authorization: Bearer <JWT_TOKEN>
 ```
 
 ---
 
+## 🧩 Nouveauté — Fusion d’apps (iOS + Android)
+
+Permet de **lier** deux applications **d’une même marque** (ex. Fortuneo iOS + Android) afin de regrouper le suivi et l’analyse.
+
+### Stockage (sans nouvelle table)
+- Les fusions sont stockées **par utilisateur** dans `revox_user_follows` via un **item spécial** :
+  - **PK** = `user_id`
+  - **SK** = `APP_LINKS`
+  - **Attribut** `links`: map `{ [app_pk: string]: string[] }`
+- Exemple :
+  ```json
+  {
+    "user_id": "USER#123",
+    "app_pk": "APP_LINKS",
+    "links": {
+      "android#com.fortuneo.android": ["ios#id310633997"],
+      "ios#id310633997": ["android#com.fortuneo.android"]
+    },
+    "updated_at": "2025-09-04T09:00:00.000Z"
+  }
+  ```
+
+### Endpoints
+- **POST** `/apps/merge`  
+  Lie deux apps pour l’utilisateur courant.  
+  **Body**
+  ```json
+  { "app_pks": ["android#com.fortuneo.android", "ios#id310633997"] }
+  ```
+  **Réponse**
+  ```json
+  { "ok": true, "linked": { "android#com.fortuneo.android": ["ios#id310633997"], "ios#id310633997": ["android#com.fortuneo.android"] } }
+  ```
+
+- **DELETE** `/apps/merge`  
+  Annule le lien précédemment créé.  
+  **Body** identique au POST.
+
+### Effets côté API existante
+- **GET** `/follow-app` : chaque app suivie inclut désormais `linked_app_pks: string[]`.
+- **GET** `/reviews` : accepte **un seul paramètre `app_pk`** pouvant contenir **une valeur** ou **plusieurs séparées par des virgules** → les avis sont fusionnés et triés par date (DESC par défaut).
+  - Ex. mono : `app_pk=android%23com.fortuneo.android`
+  - Ex. multi : `app_pk=android%23com.fortuneo.android,ios%23310633997`
+  - ⚠️ URL encoder `#` → `%23`.
+- **GET** `/reviews/export` : export CSV multi-apps et **couverture complète de la plage** `from`/`to`. Il **n’y a plus de paramètre `limit` exposé** ; la pagination DynamoDB est interne.
+
+---
+
 ## 📘 API
 
-> **Toutes** les routes ci‑dessous (hors `/health` et `/search-app`) requièrent un JWT.
+> **Toutes** les routes ci-dessous (hors `/health` et `/search-app`) requièrent un JWT.
 
 ### 🟢 Health
 **GET** `/health`  
@@ -46,7 +94,7 @@ Réponse :
 
 ### 🔎 Recherche d’apps
 **GET** `/search-app`  
-**Description** : Permet de rechercher une app sur les stores iOS et Android à partir d’un mot-clé.  
+**Description** : Rechercher une app sur les stores iOS et Android à partir d’un mot-clé.  
 
 | Paramètre | Type   | Requis | Exemple  |
 |---|---|---|---|
@@ -64,7 +112,7 @@ Réponse :
 
 ### ⭐ Suivre une app
 **POST** `/follow-app`  
-**Description** : Associe l’app à l’utilisateur et déclenche automatiquement un job de planification (`PUT /ingest/schedule`). Idempotent : si l’app est déjà suivie, la réponse indique `already: true`.  
+**Description** : Lie l’app à l’utilisateur et planifie automatiquement l’ingestion (`PUT /ingest/schedule`). Idempotent.  
 
 **Body (JSON)**
 ```json
@@ -84,8 +132,6 @@ Réponse :
 
 ### ❌ Ne plus suivre une app
 **DELETE** `/follow-app`  
-**Description** : Supprime le lien entre l’utilisateur et une app, sans supprimer les données existantes.  
-
 **Body (JSON)**
 ```json
 { "bundleId": "com.instagram.android", "platform": "android" }
@@ -100,130 +146,93 @@ Réponse :
 
 ### 📄 Lister les apps suivies
 **GET** `/follow-app`  
-**Description** : Retourne toutes les apps suivies par l’utilisateur, enrichies avec nom et icône.  
+**Description** : Retourne toutes les apps suivies par l’utilisateur, enrichies avec nom, icône et liens éventuels.  
 
 **Réponse**
 ```json
 {
   "followed": [
-    { "bundleId":"com.instagram.android","platform":"android","name":"Instagram","icon":"https://..." }
+    {
+      "bundleId":"com.instagram.android",
+      "platform":"android",
+      "name":"Instagram",
+      "icon":"https://...",
+      "linked_app_pks": ["ios#id389801252"]
+    }
   ]
 }
 ```
 
 ---
 
-### 🗂 Lancer une ingestion d’avis
-**POST** `/reviews/ingest`  
-**Description** : Déclenche manuellement l’ingestion des avis d’une app. Peut être utilisé pour forcer un backfill sur une période donnée.  
+### 🧷 Fusion d’applications (nouveau)
+**POST** `/apps/merge`  
+**DELETE** `/apps/merge`  
 
 **Body (JSON)**
 ```json
-{ "bundleId": "com.instagram.android", "platform": "android", "appName": "Instagram", "backfillDays": 2 }
+{ "app_pks": ["android#<bundleId>", "ios#<id|bundleId>"] }
 ```
 
-**Réponse**
+**Réponses** : incluent l’état `linked` après opération.
+
+---
+
+### 🗂 Lancer une ingestion d’avis
+**POST** `/reviews/ingest`  
+**Body (JSON)**
 ```json
-{
-  "ok": true,
-  "queued": { "mode":"incremental","appName":"Instagram","platform":"android","bundleId":"com.instagram.android","backfillDays":2 }
-}
+{ "bundleId": "com.instagram.android", "platform": "android", "appName": "Instagram", "backfillDays": 2 }
 ```
 
 ---
 
 ### 💬 Récupérer les avis
 **GET** `/reviews`  
-**Description** : Récupère les avis stockés en base pour une app donnée. Supporte la **pagination avec curseur** : la réponse contient `nextCursor` qu’il faut réutiliser comme paramètre `cursor` dans l’appel suivant pour obtenir la page suivante.  
+**Description** : Récupère les avis stockés. Supporte **mono** ou **multi-apps** via **un seul** paramètre `app_pk`. Pagination **par curseur**.  
 
 **Query params** :  
-| Paramètre   | Type             | Requis | Exemple |
-|-------------|------------------|--------|---------|
-| `platform`  | `ios`\|`android` | ✅      | `android` |
-| `bundleId`  | string           | ✅      | `com.fortuneo.android` |
-| `limit`     | number           | optionnel | `50` |
-| `from` / `to` | ISO date       | optionnel | `2025-08-01T00:00:00Z` |
-| `order`     | `asc`\|`desc`    | optionnel | `desc` |
-| `cursor`    | string (opaque)  | optionnel | jeton renvoyé par l’appel précédent |
+| Paramètre   | Type                 | Requis | Exemple |
+|-------------|----------------------|--------|---------|
+| `app_pk`    | string (mono **ou** liste séparée par virgules) | ✅ | `android%23com.fortuneo.android,ios%23310633997` |
+| `limit`     | number (1..200)      | optionnel | `50` |
+| `order`     | `asc`\|`desc`        | optionnel | `desc` |
+| `cursor`    | string (opaque)      | optionnel | jeton renvoyé par l’appel précédent |
 
-**Exemple de réponse** :  
-```json
-{
-  "items": [
-    {
-      "app_pk": "android#com.fortuneo.android",
-      "date": "2025-09-02T08:24:45.612Z",
-      "rating": 5,
-      "platform": "android",
-      "ts_review": "2025-09-02T08:24:45.612Z#5wbata",
-      "app_name": "Fortuneo - la banque en ligne",
-      "ingested_at": "2025-09-03T08:46:10.193Z",
-      "app_version": "10.20.0",
-      "text": "superbe banque 👍",
-      "source": "store-scraper-v1",
-      "user_name": "Maurice jean Claude Airaudo",
-      "bundle_id": "com.fortuneo.android"
-    }
-  ],
-  "nextCursor": "eyJhcHBfcGsiOiJhbmRyb2lkI2NvbS5mb3J0dW5lby5hbmRyb2lkIiwidHNfcmV2aWV3IjoiMjAyNS0wOS0wMVQwOToxOTowNS41ODBaIzFmcGpnMm4ifQ==",
-  "count": 5
-}
+**Exemple**
+```http
+GET /reviews?app_pk=android%23com.fortuneo.android,ios%23310633997&limit=50
 ```
+**Réponse**
+```json
+{ "items":[ ... ], "nextCursor":"...", "count":50 }
+```
+
+> Note: pour compat héritée, `platform` + `bundleId` peuvent encore être acceptés si vous avez conservé le “pont” (optionnel).
 
 ---
 
 ### 📤 Export CSV des avis
 **GET** `/reviews/export`  
-**Description** : Identique à `/reviews`, mais retourne un fichier CSV. Pratique pour exploitation externe (Excel, BI).  
+**Description** : Export CSV sur une **plage de dates**, en mono ou multi-apps. Pas de `limit` exposé — l’API renvoie **l’intégralité** des avis dans `[from, to]`.  
+
+**Query params** :  
+| Paramètre | Type | Requis | Exemple |
+|---|---|---|---|
+| `app_pk` | string (mono ou multi, séparé par virgules) | ✅ | `android%23com.fortuneo.android,ios%23310633997` |
+| `from` / `to` | ISO date | ✅ | `2025-07-01T00:00:00.000Z` / `2025-09-05T23:59:59.999Z` |
+| `order` | `asc`\|`desc` | optionnel | `desc` |
+
+**Colonnes CSV** : `app_pk, platform, bundle_id, date, ts_review, rating, user_name, app_version, source, text`
+
+> Implémentation : filtre côté DynamoDB via `KeyCondition` sur `ts_review` (`BETWEEN`/`>=`/`<=`), merge **k-way** des flux multi-apps, pagination interne. Encoder `#` dans l’URL (`%23`).
 
 ---
 
 ### ⏱️ Programmer l’ingestion
 **PUT** `/ingest/schedule`  
-**Description** : Crée ou met à jour un job d’ingestion récurrent pour une app suivie. Intervalle en minutes configurable.  
-
-**Body (JSON)**
-```json
-{ "bundleId": "com.instagram.android", "platform": "android", "intervalMinutes": 30 }
-```
-
----
-
-### 📊 Consulter la planification d’une app
 **GET** `/ingest/schedule`  
-**Description** : Retourne la configuration d’ingestion planifiée pour une app spécifique (interval, last run, next run).  
-
-| Paramètre | Type | Requis | Exemple |
-|---|---|---|---|
-| `bundleId` | string | ✅ | `com.instagram.android` |
-| `platform` | `ios`\|`android` | ✅ | `android` |
-
----
-
-### 📋 Lister tous les jobs planifiés
-**GET** `/ingest/schedule/list`  
-**Description** : Liste l’ensemble des jobs d’ingestion planifiés pour l’utilisateur. Supporte un paramètre `limit`.  
-
-**Réponse (réel)**  
-```json
-{
-  "ok": true,
-  "items": [
-    {
-      "appName": "Fortuneo - la banque en ligne",
-      "app_pk": "android#com.fortuneo.android",
-      "enabled": true,
-      "interval_minutes": 30,
-      "last_enqueued_at": 1756742462690,
-      "next_run_at": 1756744262690,
-      "due_pk": "DUE",
-      "last_enqueued_at_iso": "2025-09-01T16:01:02.690Z",
-      "next_run_at_iso": "2025-09-01T16:31:02.690Z"
-    }
-  ],
-  "nextCursor": null
-}
-```
+**GET** `/ingest/schedule/list`
 
 ---
 
@@ -231,11 +240,30 @@ Réponse :
 
 | Table                 | PK            | SK         | Description                          |
 |---|---|---|---|
-| `revox_user_follows`  | `user_id`     | `app_pk`   | Lien user → apps suivies             |
-| `apps_metadata`       | `app_key`     | —          | Nom, icône, store ids…               |
+| `revox_user_follows`  | `user_id`     | `app_pk`   | Lien user → apps suivies (+ item `APP_LINKS` pour fusions) |
+| `apps_metadata`       | `app_pk`      | —          | Nom, icône, store ids…               |
 | `revox_app_reviews`   | `app_pk`      | `ts_review`| Avis utilisateurs ingérés            |
-| `revox_users`         | `id`          | —          | Utilisateurs Cognito                  |
-| `apps_ingest_schedule`| `app_pk`      | `due_pk`   | Planification des jobs d’ingestion    |
+| `revox_users`         | `id`          | —          | Utilisateurs Cognito                 |
+| `apps_ingest_schedule`| `app_pk`      | `due_pk`   | Planification des jobs d’ingestion   |
+
+---
+
+## 🔧 Variables d’environnement (extraits)
+
+- `USER_FOLLOWS_TABLE` = `revox_user_follows`
+- `APPS_METADATA_TABLE` = `apps_metadata`
+- `APPS_INGEST_SCHEDULE_TABLE` = `apps_ingest_schedule`
+- `REVIEWS_TABLE` = `revox_app_reviews`
+- `EXTRACTION_QUEUE_URL` (SQS), `AWS_REGION`, etc.
+
+---
+
+## 🔒 IAM (extraits requis côté Lambda `api`)
+
+- Sur `revox_user_follows` : `GetItem`, `PutItem`, `UpdateItem`, `Query`
+- Sur `apps_metadata` : `GetItem`, `PutItem`
+- Sur `revox_app_reviews` : `Query`
+- Sur `apps_ingest_schedule` : `GetItem`, `PutItem`, `UpdateItem`, `Query`
 
 ---
 
