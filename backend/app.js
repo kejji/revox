@@ -20,7 +20,8 @@ const allowedOrigins = [ "http://localhost:8080",
                           "https://preview--revox-frontend.lovable.app", 
                           "https://lovable.app", 
                           "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.lovableproject.com",
-                          "https://id-preview--c9a1ce22-5aa0-4154-9698-a80bfd723859.lovable.app"
+                          "https://id-preview--c9a1ce22-5aa0-4154-9698-a80bfd723859.lovable.app",
+                          "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev"
                         ];
 
 const corsOptions = {
