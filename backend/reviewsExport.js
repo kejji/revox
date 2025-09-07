@@ -7,6 +7,8 @@ const ddb = DynamoDBDocumentClient.from(
 );
 
 const REVIEWS_TABLE = process.env.REVIEWS_TABLE || process.env.REVOX_REVIEWS_TABLE || "revox_app_reviews";
+// Taille de page interne pour DynamoDB (non exposée au client)
+const PAGE_SIZE = 500;
 
 function csvEscape(val) {
   if (val === null || val === undefined) return "";
@@ -32,8 +34,8 @@ function parseAppsFromQuery(qs) {
 }
 
 // Construit KeyCondition/Values selon from/to
-function buildQueryInput({ tableName, app_pk, from, to, order = "desc", limit = 200, ExclusiveStartKey }) {
-  // ts_review est de la forme "YYYY-MM-DDTHH:mm:ss.sssZ#..." → on bornes avec "#", "#z"
+function buildQueryInput({ tableName, app_pk, from, to, order = "desc", pageSize = PAGE_SIZE, ExclusiveStartKey }) {
+  // ts_review est de la forme "YYYY-MM-DDTHH:mm:ss.sssZ#..." → on borne avec "#", "#z"
   const hasFrom = !!from;
   const hasTo = !!to;
 
@@ -57,7 +59,7 @@ function buildQueryInput({ tableName, app_pk, from, to, order = "desc", limit = 
     KeyConditionExpression,
     ExpressionAttributeValues,
     ScanIndexForward: String(order || "desc").toLowerCase() !== "desc", // desc => false
-    Limit: limit,
+    Limit: pageSize,
     ExclusiveStartKey
   };
 }
@@ -74,7 +76,11 @@ export async function exportReviewsCsv(req, res) {
     const from = qs.from; // ex "2025-07-01T00:00:00.000Z"
     const to   = qs.to;   // ex "2025-09-05T23:59:59.999Z"
     const order = String(qs.order || "desc").toLowerCase();
-    const pageSize = Math.max(1, Math.min(parseInt(qs.pageSize || "200", 10), 1000)); // taille par Query
+
+    // (facultatif) ignorer proprement un éventuel qs.limit encore envoyé par des clients
+    if (qs.limit) {
+      console.warn("exportReviewsCsv: 'limit' query param is ignored; export streams full date range.");
+    }
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="reviews.csv"`);
@@ -94,7 +100,7 @@ export async function exportReviewsCsv(req, res) {
         tableName: REVIEWS_TABLE,
         app_pk: pk,
         from, to, order,
-        limit: pageSize,
+        pageSize: PAGE_SIZE,
         ExclusiveStartKey: perAppKeys[pk]
       })));
       buffers[pk] = out.Items || [];
