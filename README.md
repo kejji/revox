@@ -29,32 +29,6 @@ Authorization: Bearer <JWT_TOKEN>
 
 ---
 
-### Endpoints
-- **POST** `/apps/merge`  
-  Lie deux apps pour l’utilisateur courant.  
-  **Body**
-  ```json
-  { "app_pks": ["android#com.fortuneo.android", "ios#com.fortuneo.fortuneo"] }
-  ```
-  **Réponse**
-  ```json
-  { "ok": true, "linked": { "android#com.fortuneo.android": ["ios#com.fortuneo.fortuneo"], "ios#com.fortuneo.fortuneo": ["android#com.fortuneo.android"] } }
-  ```
-
-- **DELETE** `/apps/merge`  
-  Annule le lien précédemment créé.  
-  **Body** identique au POST.
-
-### Effets côté API existante
-- **GET** `/follow-app` : chaque app suivie inclut désormais `linked_app_pks: string[]`.
-- **GET** `/reviews` : accepte **un seul paramètre `app_pk`** pouvant contenir **une valeur** ou **plusieurs séparées par des virgules** → les avis sont fusionnés et triés par date (DESC par défaut).
-  - Ex. mono : `app_pk=android%23com.fortuneo.android`
-  - Ex. multi : `app_pk=android%23com.fortuneo.android,ios%23310633997`
-  - ⚠️ URL encoder `#` → `%23`.
-- **GET** `/reviews/export` : export CSV multi-apps et **couverture complète de la plage** `from`/`to`. Il **n’y a plus de paramètre `limit` exposé** ; la pagination DynamoDB est interne.
-
----
-
 ## 📘 API
 
 > **Toutes** les routes ci-dessous (hors `/health` et `/search-app`) requièrent un JWT.
@@ -143,7 +117,7 @@ Réponse :
 
 ---
 
-### 🧷 Fusion d’applications (nouveau)
+### 🧷 Fusion d’applications
 **POST** `/apps/merge`  
 **DELETE** `/apps/merge`  
 
