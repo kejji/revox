@@ -74,7 +74,7 @@ export async function exportReviewsCsv(req, res) {
     const from = qs.from; // ex "2025-07-01T00:00:00.000Z"
     const to   = qs.to;   // ex "2025-09-05T23:59:59.999Z"
     const order = String(qs.order || "desc").toLowerCase();
-    const limit = Math.max(1, Math.min(parseInt(qs.limit || "200", 10), 1000)); // taille par Query
+    const pageSize = Math.max(1, Math.min(parseInt(qs.pageSize || "200", 10), 1000)); // taille par Query
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="reviews.csv"`);
@@ -94,7 +94,7 @@ export async function exportReviewsCsv(req, res) {
         tableName: REVIEWS_TABLE,
         app_pk: pk,
         from, to, order,
-        limit: limit,
+        limit: pageSize,
         ExclusiveStartKey: perAppKeys[pk]
       })));
       buffers[pk] = out.Items || [];
