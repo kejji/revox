@@ -29,38 +29,16 @@ Authorization: Bearer <JWT_TOKEN>
 
 ---
 
-## 🧩 Nouveauté — Fusion d’apps (iOS + Android)
-
-Permet de **lier** deux applications **d’une même marque** (ex. Fortuneo iOS + Android) afin de regrouper le suivi et l’analyse.
-
-### Stockage (sans nouvelle table)
-- Les fusions sont stockées **par utilisateur** dans `revox_user_follows` via un **item spécial** :
-  - **PK** = `user_id`
-  - **SK** = `APP_LINKS`
-  - **Attribut** `links`: map `{ [app_pk: string]: string[] }`
-- Exemple :
-  ```json
-  {
-    "user_id": "USER#123",
-    "app_pk": "APP_LINKS",
-    "links": {
-      "android#com.fortuneo.android": ["ios#id310633997"],
-      "ios#id310633997": ["android#com.fortuneo.android"]
-    },
-    "updated_at": "2025-09-04T09:00:00.000Z"
-  }
-  ```
-
 ### Endpoints
 - **POST** `/apps/merge`  
   Lie deux apps pour l’utilisateur courant.  
   **Body**
   ```json
-  { "app_pks": ["android#com.fortuneo.android", "ios#id310633997"] }
+  { "app_pks": ["android#com.fortuneo.android", "ios#com.fortuneo.fortuneo"] }
   ```
   **Réponse**
   ```json
-  { "ok": true, "linked": { "android#com.fortuneo.android": ["ios#id310633997"], "ios#id310633997": ["android#com.fortuneo.android"] } }
+  { "ok": true, "linked": { "android#com.fortuneo.android": ["ios#com.fortuneo.fortuneo"], "ios#com.fortuneo.fortuneo": ["android#com.fortuneo.android"] } }
   ```
 
 - **DELETE** `/apps/merge`  
@@ -157,7 +135,7 @@ Réponse :
       "platform":"android",
       "name":"Instagram",
       "icon":"https://...",
-      "linked_app_pks": ["ios#id389801252"]
+      "linked_app_pks": ["ios#com.fortuneo.fortuneo"]
     }
   ]
 }
@@ -171,7 +149,7 @@ Réponse :
 
 **Body (JSON)**
 ```json
-{ "app_pks": ["android#<bundleId>", "ios#<id|bundleId>"] }
+{ "app_pks": ["android#<bundleId>", "ios#<bundleId>"] }
 ```
 
 **Réponses** : incluent l’état `linked` après opération.
