@@ -3,13 +3,15 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, DeleteCommand, QueryCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { searchAppMetadata } from "./searchAppMetadata.js";
 import { getLinks } from "./appLinks.js";
+import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 
 const REGION = process.env.AWS_REGION;
 const USER_FOLLOWS_TABLE = process.env.USER_FOLLOWS_TABLE;
 const APPS_METADATA_TABLE = process.env.APPS_METADATA_TABLE;
 const APPS_INGEST_SCHEDULE_TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
 const DEFAULT_INTERVAL_MIN = parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10);
-
+const QUEUE_URL = process.env.EXTRACTION_QUEUE_URL;
+const sqs = new SQSClient({ region: REGION });
 
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
@@ -86,7 +88,38 @@ export async function followApp(req, res) {
     await enrichAppMetadataIfNeeded(appKey, bundleId, platform);
     // 3. Créer automatiquement un planning d'ingestion si absent
     const sched = await ensureScheduleForApp(appKey, bundleId, platform);
-
+    // 4. Déclenche une ingestion immédiate (fire & schedule)
+    try {
+      const payload = {
+        mode: "incremental",
+        appName: sched?.schedule?.appName ?? undefined, // si récupéré depuis apps_metadata
+        platform,
+        bundleId,
+        backfillDays: 2
+      };
+      await sqs.send(new SendMessageCommand({
+        QueueUrl: QUEUE_URL,
+        MessageBody: JSON.stringify(payload)
+      }));
+      // Met à jour le schedule: on décale next_run_at de l'intervalle et on log last_enqueued_at
+      const now = Date.now();
+      const next = now + (sched?.schedule?.interval_minutes ?? DEFAULT_INTERVAL_MIN) * 60 * 1000;
+      await ddb.send(new PutCommand({
+        TableName: APPS_INGEST_SCHEDULE_TABLE,
+        Item: {
+          app_pk: appKey,
+          due_pk: "DUE",
+          appName: sched?.schedule?.appName ?? null,
+          interval_minutes: sched?.schedule?.interval_minutes ?? DEFAULT_INTERVAL_MIN,
+          enabled: true,
+          next_run_at: next,
+          last_enqueued_at: now
+        }
+      }));
+    } catch (e) {
+      console.warn("followApp: immediate enqueue failed", e?.message || e);
+      // On ne casse pas la création du follow pour autant
+    }
     return res.status(201).json({
       ok: true,
       followed: { bundleId, platform, followedAt: nowIso },
