@@ -1,6 +1,13 @@
 // backend/followApp.js
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, DeleteCommand, QueryCommand, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  PutCommand,
+  DeleteCommand,
+  QueryCommand,
+  GetCommand,
+  UpdateCommand
+} from "@aws-sdk/lib-dynamodb";
 import { searchAppMetadata } from "./searchAppMetadata.js";
 import { getLinks } from "./appLinks.js";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
@@ -11,231 +18,79 @@ const APPS_METADATA_TABLE = process.env.APPS_METADATA_TABLE;
 const APPS_INGEST_SCHEDULE_TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
 const DEFAULT_INTERVAL_MIN = Number.isFinite(parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10))
   ? parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10)
-  : 60; // fallback 60 minconst QUEUE_URL = process.env.EXTRACTION_QUEUE_URL;
-const sqs = new SQSClient({ region: REGION });
+  : 60; // fallback 60 min
 
+const QUEUE_URL = process.env.EXTRACTION_QUEUE_URL; // <-- fix: déclaration propre
+
+const sqs = new SQSClient({ region: REGION });
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
+const nowMs = () => Date.now();
+const minutes = (n) => n * 60 * 1000;
+
+/* ===================== SCHEDULE ===================== */
+
 async function ensureScheduleForApp(appKey, bundleId, platform) {
-  // Récupérer un appName si possible (depuis apps_metadata) — optionnel
-  let appName = null;
-  try {
-    const meta = await ddb.send(new GetCommand({
-      TableName: APPS_METADATA_TABLE,
-      Key: { app_pk: appKey }
-    }));
-    appName = meta.Item?.name ?? null;
-  } catch (e) {
-    console.warn("ensureScheduleForApp: meta lookup failed", e?.message || e);
-  }
+  // On initialise l'item s'il n'existe pas, sans écraser s'il existe déjà
+  const now = nowMs();
+  await ddb.send(new UpdateCommand({
+    TableName: APPS_INGEST_SCHEDULE_TABLE,
+    Key: { app_pk: appKey, due_pk: "DUE" },
+    UpdateExpression: "SET appName = if_not_exists(appName, :appName), interval_minutes = if_not_exists(interval_minutes, :interval), enabled = if_not_exists(enabled, :enabled), created_at = if_not_exists(created_at, :now), next_run_at = if_not_exists(next_run_at, :now)",
+    ExpressionAttributeValues: {
+      ":appName": null,
+      ":interval": DEFAULT_INTERVAL_MIN,
+      ":enabled": true,
+      ":now": now
+    }
+  }));
 
-  const nowMs = Date.now();
-  const item = {
-    app_pk: appKey,
-    due_pk: "DUE",
+  const res = await ddb.send(new GetCommand({
+    TableName: APPS_INGEST_SCHEDULE_TABLE,
+    Key: { app_pk: appKey, due_pk: "DUE" }
+  }));
+  return { created: !res.Item?.created_at || res.Item?.created_at === now, schedule: res.Item };
+}
+
+async function enqueueImmediateIngest({ appName, platform, bundleId, backfillDays = 2 }) {
+  if (!QUEUE_URL) throw new Error("Missing EXTRACTION_QUEUE_URL");
+  const payload = {
+    mode: "incremental",
     appName,
-    interval_minutes: DEFAULT_INTERVAL_MIN,
-    enabled: true,
-    next_run_at: nowMs,
-    last_enqueued_at: 0
+    platform,
+    bundleId,
+    backfillDays,
+    requestedAt: new Date().toISOString()
   };
-
-  try {
-    await ddb.send(new PutCommand({
-      TableName: APPS_INGEST_SCHEDULE_TABLE,
-      Item: item,
-      ConditionExpression: "attribute_not_exists(app_pk)"
-    }));
-    return { created: true, schedule: item };
-  } catch (e) {
-    if (e?.name === "ConditionalCheckFailedException") {
-      // le planning existe déjà — rien à faire
-      return { created: false, already: true };
+  await sqs.send(new SendMessageCommand({
+    QueueUrl: QUEUE_URL,
+    MessageBody: JSON.stringify(payload),
+    MessageAttributes: {
+      appName: { DataType: "String", StringValue: String(appName ?? "") },
+      platform: { DataType: "String", StringValue: String(platform) },
+      bundleId: { DataType: "String", StringValue: String(bundleId) }
     }
-    console.warn("ensureScheduleForApp: error", e?.message || e);
-    return { created: false, error: e?.message || String(e) };
-  }
+  }));
 }
 
+/* =============== METADATA (UPSERT + LAZY REFRESH) =============== */
 
-export async function followApp(req, res) {
-  const userId = req.auth?.sub;
-  const { bundleId, platform } = req.body || {};
-
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  if (!bundleId || !platform) {
-    return res.status(400).json({ error: "bundleId et platform sont requis" });
-  }
-
-  const appKey = `${platform.toLowerCase()}#${bundleId}`;
-  const nowIso = new Date().toISOString();
-
-  try {
-    // 1. Insérer dans user_follows
-    await ddb.send(new PutCommand({
-      TableName: USER_FOLLOWS_TABLE,
-      Item: {
-        user_id: userId,
-        app_pk: appKey,
-        followed_at: nowIso,
-      },
-      ConditionExpression: "attribute_not_exists(user_id) AND attribute_not_exists(app_pk)"
-    }));
-
-    // 2. Tenter d'enrichir apps_metadata si l'app n'existe pas encore
-    await enrichAppMetadataIfNeeded(appKey, bundleId, platform);
-    // 3. Créer automatiquement un planning d'ingestion si absent
-    const sched = await ensureScheduleForApp(appKey, bundleId, platform);
-    // 4. Déclenche une ingestion immédiate (fire & schedule)
-    try {
-      const payload = {
-        mode: "incremental",
-        appName: sched?.schedule?.appName ?? undefined, // si récupéré depuis apps_metadata
-        platform,
-        bundleId,
-        backfillDays: 2
-      };
-      await sqs.send(new SendMessageCommand({
-        QueueUrl: QUEUE_URL,
-        MessageBody: JSON.stringify(payload)
-      }));
-      // Met à jour le schedule: on décale next_run_at de l'intervalle et on log last_enqueued_at
-      const now = Date.now();
-      const next = now + (sched?.schedule?.interval_minutes ?? DEFAULT_INTERVAL_MIN) * 60 * 1000;
-      await ddb.send(new UpdateCommand({
-        TableName: APPS_INGEST_SCHEDULE_TABLE,
-        Key: { app_pk: appKey, due_pk: "DUE" },
-        UpdateExpression: "SET last_enqueued_at = :now, next_run_at = :next, appName = if_not_exists(appName, :appName), interval_minutes = if_not_exists(interval_minutes, :interval), enabled = :enabled",
-        ExpressionAttributeValues: {
-          ":now": now,
-          ":next": next,
-          ":appName": sched?.schedule?.appName ?? null,
-          ":interval": sched?.schedule?.interval_minutes ?? DEFAULT_INTERVAL_MIN,
-          ":enabled": true
-        }
-      }));
-    } catch (e) {
-      console.warn("followApp: immediate enqueue failed", e?.message || e);
-      // On ne casse pas la création du follow pour autant
-    }
-    return res.status(201).json({
-      ok: true,
-      followed: { bundleId, platform, followedAt: nowIso },
-      schedule: sched
-    });
-  } catch (err) {
-    if (err?.name === "ConditionalCheckFailedException") {
-      // déjà suivi : on tente quand même de s'assurer du planning (idempotent)
-      const sched = await ensureScheduleForApp(appKey, bundleId, platform);
-      return res.status(200).json({ ok: true, already: true, schedule: sched });
-    }
-    console.error("Erreur followApp:", err);
-    return res.status(500).json({ error: "Erreur serveur" });
-  }
-}
-
-export async function unfollowApp(req, res) {
-  const userId = req.auth?.sub;
-  const { bundleId, platform } = req.body || {};
-
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  if (!bundleId || !platform) {
-    return res.status(400).json({ error: "bundleId et platform sont requis" });
-  }
-
-  const appKey = `${platform.toLowerCase()}#${bundleId}`;
-
-  try {
-    await ddb.send(new DeleteCommand({
-      TableName: USER_FOLLOWS_TABLE,
-      Key: {
-        user_id: userId,
-        app_pk: appKey
-      }
-    }));
-
-    return res.status(200).json({ ok: true, unfollowed: { bundleId, platform } });
-  } catch (err) {
-    console.error("Erreur unfollowApp:", err);
-    return res.status(500).json({ error: "Erreur serveur" });
-  }
-}
-
-export async function getFollowedApps(req, res) {
-  const userId = req.auth?.sub;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-  try {
-    const result = await ddb.send(new QueryCommand({
-      TableName: USER_FOLLOWS_TABLE,
-      KeyConditionExpression: "user_id = :uid",
-      ExpressionAttributeValues: {
-        ":uid": userId
-      }
-    }));
-
-    const items = result.Items ?? [];
-    if (!items.length) return res.status(200).json({ followed: [] });
-    // Charger les liens (fusions) une seule fois
-    const linksMap = await getLinks(userId); // { [app_pk]: string[] }
-    const dedup = (arr) => Array.from(new Set(Array.isArray(arr) ? arr : []));
-    // Filtrer pour ne garder que les lignes de suivi (SK = app_pk réel)
-    const follows = items.filter(it => it.app_pk && it.app_pk !== "APP_LINKS");
-
-    // Enrichissement apps_metadata + ajout linked_app_pks
-    const enriched = await Promise.all(follows.map(async (it) => {
-      const appKey = it.app_pk;
-      const [platform, bundleId] = appKey.split("#", 2);
-      try {
-        const meta = await ddb.send(new GetCommand({
-          TableName: APPS_METADATA_TABLE,
-          Key: { app_pk: appKey }
-        }));
-        return {
-          bundleId,
-          platform,
-          name: meta.Item?.name || null,
-          icon: meta.Item?.icon || null,
-          version: meta.Item?.version ?? null,
-          rating: meta.Item?.rating ?? null,
-          ratingCount: meta.Item?.ratingCount ?? null,
-          releaseNotes: meta.Item?.releaseNotes ?? null,
-          lastUpdatedAt: meta.Item?.lastUpdatedAt ?? null,
-          linked_app_pks: dedup(linksMap[appKey])
-        };
-      } catch (err) {
-        console.warn("getFollowedApps: erreur meta pour", appKey, err.message);
-        return { bundleId, platform, name: null, icon: null, linked_app_pks: dedup(linksMap[appKey]) };
-      }
-    }));
-
-    return res.status(200).json({ followed: enriched });
-  } catch (err) {
-    console.error("Erreur getFollowedApps:", err);
-    return res.status(500).json({ error: "Erreur serveur" });
-  }
-}
-
-async function enrichAppMetadataIfNeeded(appKey, bundleId, platform) {
+async function upsertAppMetadata(appKey, bundleId, platform) {
   try {
     const meta = await searchAppMetadata(bundleId, platform);
     if (!meta) return;
-
-    // Upsert enrichi : on met à jour les nouveaux champs, sans écraser inutilement
     await ddb.send(new UpdateCommand({
       TableName: APPS_METADATA_TABLE,
       Key: { app_pk: appKey },
       UpdateExpression: [
         "SET",
-        // Conserve name/icon si déjà présents, sinon pose depuis le store
         "name = if_not_exists(name, :name)",
         "icon = if_not_exists(icon, :icon)",
         "platform = :platform",
         "bundleId = :bundleId",
-        // Champs ajoutés
         "version = :version",
         "rating = :rating",
         "ratingCount = :ratingCount",
@@ -257,6 +112,183 @@ async function enrichAppMetadataIfNeeded(appKey, bundleId, platform) {
       }
     }));
   } catch (e) {
-    console.warn("enrichAppMetadataIfNeeded: skipped", e.message);
+    console.warn("upsertAppMetadata: skipped", appKey, e?.message || e);
+  }
+}
+
+/**
+ * Si meta absente/incomplète au moment du GET, on relit le store et on upsert.
+ * Renvoie toujours l’état courant (après éventuel refresh).
+ */
+async function getOrRefreshMetadata(appKey, platform, bundleId) {
+  const current = await ddb.send(new GetCommand({
+    TableName: APPS_METADATA_TABLE,
+    Key: { app_pk: appKey }
+  }));
+  const hasEnough =
+    current.Item &&
+    (current.Item.icon || current.Item.name || current.Item.version || current.Item.rating != null || current.Item.releaseNotes);
+
+  if (hasEnough) return current.Item;
+
+  // Lazy refresh
+  const fresh = await searchAppMetadata(bundleId, platform);
+  if (fresh) {
+    await ddb.send(new UpdateCommand({
+      TableName: APPS_METADATA_TABLE,
+      Key: { app_pk: appKey },
+      UpdateExpression: [
+        "SET",
+        "name = :name",
+        "icon = :icon",
+        "platform = :platform",
+        "bundleId = :bundleId",
+        "version = :version",
+        "rating = :rating",
+        "ratingCount = :ratingCount",
+        "releaseNotes = :releaseNotes",
+        "lastUpdatedAt = :lastUpdatedAt",
+        "lastUpdated = :now"
+      ].join(" "),
+      ExpressionAttributeValues: {
+        ":name": fresh.name ?? null,
+        ":icon": fresh.icon ?? null,
+        ":platform": platform,
+        ":bundleId": bundleId,
+        ":version": fresh.version ?? null,
+        ":rating": fresh.rating ?? null,
+        ":ratingCount": fresh.ratingCount ?? null,
+        ":releaseNotes": fresh.releaseNotes ?? null,
+        ":lastUpdatedAt": fresh.lastUpdatedAt ?? null,
+        ":now": new Date().toISOString()
+      }
+    }));
+    return { ...(current.Item || {}), ...fresh };
+  }
+  return current.Item || null;
+}
+
+/* ========================= ROUTES ========================= */
+
+export async function followApp(req, res) {
+  const userId = req.auth?.sub;
+  const { bundleId, platform } = req.body || {};
+
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!bundleId || !platform) return res.status(400).json({ error: "bundleId et platform sont requis" });
+
+  const appKey = `${String(platform).toLowerCase()}#${bundleId}`;
+  const nowIso = new Date().toISOString();
+
+  try {
+    // 1) Lien user → app (idempotent)
+    try {
+      await ddb.send(new PutCommand({
+        TableName: USER_FOLLOWS_TABLE,
+        Item: { user_id: userId, app_pk: appKey, followed_at: nowIso },
+        ConditionExpression: "attribute_not_exists(user_id) AND attribute_not_exists(app_pk)"
+      }));
+    } catch (e) {
+      if (e?.name !== "ConditionalCheckFailedException") throw e;
+    }
+
+    // 2) Upsert metadata (name, icon, version, rating, releaseNotes…)
+    await upsertAppMetadata(appKey, bundleId, platform); //  [oai_citation:1‡followApp.js](file-service://file-Wcd5ptB7WhixaMXDTtsYAr)
+
+    // 3) Assure un planning d’ingestion
+    const sched = await ensureScheduleForApp(appKey, bundleId, platform); //  [oai_citation:2‡followApp.js](file-service://file-Wcd5ptB7WhixaMXDTtsYAr)
+
+    // 4) Déclenche ingestion immédiate puis décale next_run_at
+    try {
+      await enqueueImmediateIngest({ appName: sched?.schedule?.appName, platform, bundleId, backfillDays: 2 });
+      const now = nowMs();
+      const next = now + minutes(sched?.schedule?.interval_minutes ?? DEFAULT_INTERVAL_MIN);
+      await ddb.send(new UpdateCommand({
+        TableName: APPS_INGEST_SCHEDULE_TABLE,
+        Key: { app_pk: appKey, due_pk: "DUE" },
+        UpdateExpression: "SET last_enqueued_at = :now, next_run_at = :next, enabled = :enabled, interval_minutes = if_not_exists(interval_minutes, :interval)",
+        ExpressionAttributeValues: {
+          ":now": now, ":next": next, ":enabled": true, ":interval": DEFAULT_INTERVAL_MIN
+        }
+      }));
+    } catch (e) {
+      console.warn("followApp: immediate enqueue failed", e?.message || e);
+    }
+
+    return res.status(201).json({
+      ok: true,
+      followed: { bundleId, platform, followedAt: nowIso },
+      schedule: sched
+    });
+  } catch (err) {
+    console.error("Erreur followApp:", err);
+    return res.status(500).json({ error: "Erreur serveur" });
+  }
+}
+
+export async function unfollowApp(req, res) {
+  const userId = req.auth?.sub;
+  const { bundleId, platform } = req.body || {};
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!bundleId || !platform) return res.status(400).json({ error: "bundleId et platform sont requis" });
+
+  const appKey = `${String(platform).toLowerCase()}#${bundleId}`;
+  try {
+    await ddb.send(new DeleteCommand({
+      TableName: USER_FOLLOWS_TABLE,
+      Key: { user_id: userId, app_pk: appKey }
+    }));
+    return res.status(200).json({ ok: true, unfollowed: { bundleId, platform } });
+  } catch (err) {
+    console.error("Erreur unfollowApp:", err);
+    return res.status(500).json({ error: "Erreur serveur" });
+  }
+}
+
+export async function getFollowedApps(req, res) {
+  const userId = req.auth?.sub;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const result = await ddb.send(new QueryCommand({
+      TableName: USER_FOLLOWS_TABLE,
+      KeyConditionExpression: "user_id = :uid",
+      ExpressionAttributeValues: { ":uid": userId }
+    }));
+
+    const items = result.Items ?? [];
+    if (!items.length) return res.status(200).json({ followed: [] });
+
+    const linksMap = await getLinks(userId); // { [app_pk]: string[] }
+    const dedup = (arr) => Array.from(new Set(Array.isArray(arr) ? arr : []));
+
+    // Garde uniquement les clés "réelles" (pas APP_LINKS)
+    const follows = items.filter(it => it.app_pk && it.app_pk !== "APP_LINKS");
+
+    // ⬇️ Enrichissement: si meta manquante/incomplète, on relit le store (lazy refresh)
+    const enriched = await Promise.all(follows.map(async (it) => {
+      const appKey = it.app_pk;
+      const [platform, bundleId] = appKey.split("#", 2);
+
+      const meta = await getOrRefreshMetadata(appKey, platform, bundleId); // <-- clé du correctif
+
+      return {
+        bundleId,
+        platform,
+        name: meta?.name ?? null,
+        icon: meta?.icon ?? null,
+        version: meta?.version ?? null,
+        rating: meta?.rating ?? null,
+        ratingCount: meta?.ratingCount ?? null,
+        releaseNotes: meta?.releaseNotes ?? null,
+        lastUpdatedAt: meta?.lastUpdatedAt ?? null,
+        linked_app_pks: dedup(linksMap[appKey])
+      };
+    }));
+
+    return res.status(200).json({ followed: enriched });
+  } catch (err) {
+    console.error("Erreur getFollowedApps:", err);
+    return res.status(500).json({ error: "Erreur serveur" });
   }
 }
