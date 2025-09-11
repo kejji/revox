@@ -82,35 +82,46 @@ async function upsertAppMetadata(appKey, bundleId, platform) {
   try {
     const meta = await searchAppMetadata(bundleId, platform);
     if (!meta) return;
-    await ddb.send(new UpdateCommand({
-      TableName: APPS_METADATA_TABLE,
-      Key: { app_pk: appKey },
-      UpdateExpression: [
-        "SET",
-        "name = if_not_exists(name, :name)",
-        "icon = if_not_exists(icon, :icon)",
-        "platform = :platform",
-        "bundleId = :bundleId",
-        "version = :version",
-        "rating = :rating",
-        "ratingCount = :ratingCount",
-        "releaseNotes = :releaseNotes",
-        "lastUpdatedAt = :lastUpdatedAt",
-        "lastUpdated = :now"
-      ].join(" "),
-      ExpressionAttributeValues: {
-        ":name": meta.name ?? null,
-        ":icon": meta.icon ?? null,
-        ":platform": platform,
-        ":bundleId": bundleId,
-        ":version": meta.version ?? null,
-        ":rating": meta.rating ?? null,
-        ":ratingCount": meta.ratingCount ?? null,
-        ":releaseNotes": meta.releaseNotes ?? null,
-        ":lastUpdatedAt": meta.lastUpdatedAt ?? null,
-        ":now": new Date().toISOString()
-      }
-    }));
+    await ddb.send(
+      new UpdateCommand({
+        TableName: APPS_METADATA_TABLE,
+        Key: { app_pk: appKey },
+        UpdateExpression:
+          "SET #name = if_not_exists(#name, :name), " +
+          "#icon = if_not_exists(#icon, :icon), " +
+          "#platform = :platform, " +
+          "#bundleId = :bundleId, " +
+          "#version = :version, " +
+          "#rating = :rating, " +
+          "#ratingCount = :ratingCount, " +
+          "#releaseNotes = :releaseNotes, " +
+          "#lastUpdatedAt = :lastUpdatedAt, " +
+          "#lastUpdated = :now",
+        ExpressionAttributeNames: {
+          "#name": "name",
+          "#icon": "icon",
+          "#platform": "platform",
+          "#bundleId": "bundleId",
+          "#version": "version",
+          "#rating": "rating",
+          "#ratingCount": "ratingCount",
+          "#releaseNotes": "releaseNotes",
+          "#lastUpdatedAt": "lastUpdatedAt",
+          "#lastUpdated": "lastUpdated",
+        },
+        ExpressionAttributeValues: {
+          ":name": meta.name ?? null,
+          ":icon": meta.icon ?? null,
+          ":platform": platform,
+          ":bundleId": bundleId,
+          ":version": meta.version ?? null,
+          ":rating": meta.rating ?? null,
+          ":ratingCount": meta.ratingCount ?? null,
+          ":releaseNotes": meta.releaseNotes ?? null,
+          ":lastUpdatedAt": meta.lastUpdatedAt ?? null,
+          ":now": new Date().toISOString()
+        }
+      }));
   } catch (e) {
     console.warn("upsertAppMetadata: skipped", appKey, e?.message || e);
   }
@@ -137,19 +148,29 @@ async function getOrRefreshMetadata(appKey, platform, bundleId) {
     await ddb.send(new UpdateCommand({
       TableName: APPS_METADATA_TABLE,
       Key: { app_pk: appKey },
-      UpdateExpression: [
-        "SET",
-        "name = :name",
-        "icon = :icon",
-        "platform = :platform",
-        "bundleId = :bundleId",
-        "version = :version",
-        "rating = :rating",
-        "ratingCount = :ratingCount",
-        "releaseNotes = :releaseNotes",
-        "lastUpdatedAt = :lastUpdatedAt",
-        "lastUpdated = :now"
-      ].join(" "),
+      UpdateExpression:
+        "SET #name = :name, " +
+        "#icon = :icon, " +
+        "#platform = :platform, " +
+        "#bundleId = :bundleId, " +
+        "#version = :version, " +
+        "#rating = :rating, " +
+        "#ratingCount = :ratingCount, " +
+        "#releaseNotes = :releaseNotes, " +
+        "#lastUpdatedAt = :lastUpdatedAt, " +
+        "#lastUpdated = :now",
+      ExpressionAttributeNames: {
+        "#name": "name",
+        "#icon": "icon",
+        "#platform": "platform",
+        "#bundleId": "bundleId",
+        "#version": "version",
+        "#rating": "rating",
+        "#ratingCount": "ratingCount",
+        "#releaseNotes": "releaseNotes",
+        "#lastUpdatedAt": "lastUpdatedAt",
+        "#lastUpdated": "lastUpdated",
+      },
       ExpressionAttributeValues: {
         ":name": fresh.name ?? null,
         ":icon": fresh.icon ?? null,
