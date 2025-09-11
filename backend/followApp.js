@@ -38,7 +38,7 @@ async function ensureScheduleForApp(appKey, bundleId, platform) {
   const now = nowMs();
   await ddb.send(new UpdateCommand({
     TableName: APPS_INGEST_SCHEDULE_TABLE,
-    Key: { app_pk: appKey, due_pk: "DUE" },
+    Key: { app_pk: appKey },
     UpdateExpression: "SET appName = if_not_exists(appName, :appName), interval_minutes = if_not_exists(interval_minutes, :interval), enabled = if_not_exists(enabled, :enabled), created_at = if_not_exists(created_at, :now), next_run_at = if_not_exists(next_run_at, :now)",
     ExpressionAttributeValues: {
       ":appName": null,
@@ -50,7 +50,7 @@ async function ensureScheduleForApp(appKey, bundleId, platform) {
 
   const res = await ddb.send(new GetCommand({
     TableName: APPS_INGEST_SCHEDULE_TABLE,
-    Key: { app_pk: appKey, due_pk: "DUE" }
+    Key: { app_pk: appKey }
   }));
   return { created: !res.Item?.created_at || res.Item?.created_at === now, schedule: res.Item };
 }
