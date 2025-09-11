@@ -1,6 +1,6 @@
 // backend/followApp.js
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, DeleteCommand, QueryCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, DeleteCommand, QueryCommand, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { searchAppMetadata } from "./searchAppMetadata.js";
 import { getLinks } from "./appLinks.js";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
@@ -198,6 +198,11 @@ export async function getFollowedApps(req, res) {
           platform,
           name: meta.Item?.name || null,
           icon: meta.Item?.icon || null,
+          version: meta.Item?.version ?? null,
+          rating: meta.Item?.rating ?? null,
+          ratingCount: meta.Item?.ratingCount ?? null,
+          releaseNotes: meta.Item?.releaseNotes ?? null,
+          lastUpdatedAt: meta.Item?.lastUpdatedAt ?? null,
           linked_app_pks: dedup(linksMap[appKey])
         };
       } catch (err) {
@@ -215,26 +220,40 @@ export async function getFollowedApps(req, res) {
 
 async function enrichAppMetadataIfNeeded(appKey, bundleId, platform) {
   try {
-    const existing = await ddb.send(new GetCommand({
-      TableName: APPS_METADATA_TABLE,
-      Key: { app_pk: appKey }
-    }));
-    if (existing.Item) return;
-
     const meta = await searchAppMetadata(bundleId, platform);
     if (!meta) return;
 
-    await ddb.send(new PutCommand({
+    // Upsert enrichi : on met à jour les nouveaux champs, sans écraser inutilement
+    await ddb.send(new UpdateCommand({
       TableName: APPS_METADATA_TABLE,
-      Item: {
-        app_pk: appKey,
-        name: meta.name,
-        icon: meta.icon,
-        platform,
-        bundleId,
-        lastUpdated: new Date().toISOString()
-      },
-      ConditionExpression: "attribute_not_exists(app_pk)"
+      Key: { app_pk: appKey },
+      UpdateExpression: [
+        "SET",
+        // Conserve name/icon si déjà présents, sinon pose depuis le store
+        "name = if_not_exists(name, :name)",
+        "icon = if_not_exists(icon, :icon)",
+        "platform = :platform",
+        "bundleId = :bundleId",
+        // Champs ajoutés
+        "version = :version",
+        "rating = :rating",
+        "ratingCount = :ratingCount",
+        "releaseNotes = :releaseNotes",
+        "lastUpdatedAt = :lastUpdatedAt",
+        "lastUpdated = :now"
+      ].join(" "),
+      ExpressionAttributeValues: {
+        ":name": meta.name ?? null,
+        ":icon": meta.icon ?? null,
+        ":platform": platform,
+        ":bundleId": bundleId,
+        ":version": meta.version ?? null,
+        ":rating": meta.rating ?? null,
+        ":ratingCount": meta.ratingCount ?? null,
+        ":releaseNotes": meta.releaseNotes ?? null,
+        ":lastUpdatedAt": meta.lastUpdatedAt ?? null,
+        ":now": new Date().toISOString()
+      }
     }));
   } catch (e) {
     console.warn("enrichAppMetadataIfNeeded: skipped", e.message);
