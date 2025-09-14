@@ -68,15 +68,33 @@ Réponse :
 
 **Body (JSON)**
 ```json
-{ "bundleId": "com.instagram.android", "platform": "android" }
+{ "bundleId": "com.fortuneo.fortuneo", "platform": "ios" }
 ```
 
 **Réponse**
 ```json
 {
   "ok": true,
-  "followed": { "bundleId": "com.instagram.android", "platform": "android", "followedAt": "2025-09-01T12:34:56Z" },
-  "schedule": { "created": true, "already": false }
+  "followed": {
+    "bundleId": "com.fortuneo.fortuneo",
+    "platform": "ios",
+    "followedAt": "2025-09-14T22:03:25.228Z"
+  },
+  "schedule": {
+    "created": false,
+    "schedule": {
+      "app_pk": "ios#com.fortuneo.fortuneo",
+      "created_at": 1757885697963,
+      "created_at_iso": "2025-09-14T21:34:57.963Z",
+      "due_pk": "DUE",
+      "enabled": true,
+      "interval_minutes": 30,
+      "last_enqueued_at": 1757885698301,
+      "last_enqueued_at_iso": "2025-09-14T21:34:58.301Z",
+      "next_run_at": 1757887498301,
+      "next_run_at_iso": "2025-09-14T22:04:58.301Z"
+    }
+  }
 }
 ```
 
@@ -98,7 +116,10 @@ Réponse :
 
 ### 📄 Lister les apps suivies
 **GET** `/follow-app`  
-**Description** : Retourne toutes les apps suivies par l’utilisateur, enrichies avec nom, icône et liens éventuels.  
+**Description** : Retourne toutes les apps suivies par l’utilisateur, enrichies avec :
+- métadonnées (nom, icône, version, rating, releaseNotes…),
+- liens éventuels (`linked_app_pks`),
+- compteurs de nouveaux avis (`badge_count`, `total_reviews`, `last_seen_total`, `last_seen_at`).
 
 **Réponse**
 ```json
@@ -109,9 +130,36 @@ Réponse :
       "platform":"android",
       "name":"Instagram",
       "icon":"https://...",
-      "linked_app_pks": ["ios#com.fortuneo.fortuneo"]
+      "version":"123.0.0",
+      "rating":4.2,
+      "releaseNotes":"Bug fixes and improvements",
+      "lastUpdatedAt":"2025-09-10T12:34:56Z",
+      "linked_app_pks": ["ios#com.fortuneo.fortuneo"],
+      "badge_count": 7,
+      "total_reviews": 1234,
+      "last_seen_total": 1227,
+      "last_seen_at": "2025-09-13T22:04:11.091Z"
     }
   ]
+}
+```
+---
+
+**PUT** `/follow-app/mark-read`  
+**Description** : Marque une app comme “vue” par l’utilisateur et remet le compteur de badge à zéro.  
+
+**Body**
+```json
+{ "platform": "android", "bundleId": "com.fortuneo.android" }
+```
+
+**Réponse**
+```json
+{
+  "ok": true,
+  "app_pk": "android#com.fortuneo.android",
+  "last_seen_total": 1234,
+  "last_seen_at": "2025-09-14T09:01:22.000Z"
 }
 ```
 
@@ -274,49 +322,6 @@ GET /reviews/themes?app_pk=android%23com.fortuneo.android&count=200
     { "axis_id":"fees_pricing","axis_label":"Tarifs / Frais","count":3,"avg_rating":4.67,"examples":[ ... ] }
   ],
   "axes": [ ... ]
-}
-```
-
----
-
-### 🔔 Badges “nouveaux avis”
-**GET** `/follow-app/badges`  
-**Auth** : ✅  
-**Description** : Pour chaque app suivie par l’utilisateur, renvoie le nombre d’avis non lus depuis son dernier “vu”.  
-
-**Réponse**
-```json
-{
-  "ok": true,
-  "items": [
-    {
-      "app_pk": "android#com.fortuneo.android",
-      "badge_count": 7,
-      "total_reviews": 1234,
-      "last_seen_total": 1227,
-      "last_seen_at": "2025-09-13T22:04:11.091Z"
-    }
-  ]
-}
-```
-
----
-
-**PUT** `/follow-app/mark-read`  
-**Description** : Marque une app comme “vue” par l’utilisateur et remet le compteur de badge à zéro.  
-
-**Body**
-```json
-{ "platform": "android", "bundleId": "com.fortuneo.android" }
-```
-
-**Réponse**
-```json
-{
-  "ok": true,
-  "app_pk": "android#com.fortuneo.android",
-  "last_seen_total": 1234,
-  "last_seen_at": "2025-09-14T09:01:22.000Z"
 }
 ```
 

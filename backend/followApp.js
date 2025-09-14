@@ -6,7 +6,8 @@ import {
   DeleteCommand,
   QueryCommand,
   GetCommand,
-  UpdateCommand
+  UpdateCommand,
+  BatchGetCommand
 } from "@aws-sdk/lib-dynamodb";
 import { searchAppMetadata } from "./searchAppMetadata.js";
 import { getLinks } from "./appLinks.js";
@@ -319,12 +320,35 @@ export async function getFollowedApps(req, res) {
     // Garde uniquement les clés "réelles" (pas APP_LINKS)
     const follows = items.filter(it => it.app_pk && it.app_pk !== "APP_LINKS");
 
+    // Map (app_pk -> last_seen_total/at) pour calcul badge
+    const seenMap = new Map(follows.map(it => [it.app_pk, {
+      last_seen_total: Number.isFinite(it.last_seen_total) ? it.last_seen_total : 0,
+      last_seen_at: it.last_seen_at || null
+    }]));
+
+    // BatchGet des total_reviews (chunker si >100 au besoin)
+    const keys = follows.map(f => ({ app_pk: f.app_pk }));
+    const bg = await ddb.send(new BatchGetCommand({
+      RequestItems: {
+        [APPS_METADATA_TABLE]: {
+          Keys: keys,
+          ProjectionExpression: "app_pk, #c",
+          ExpressionAttributeNames: { "#c": "total_reviews" }
+        }
+      }
+    }));
+    const totals = new Map((bg.Responses?.[APPS_METADATA_TABLE] || []).map(i => [i.app_pk, i["total_reviews"] || 0]));
+
     // ⬇️ Enrichissement: si meta manquante/incomplète, on relit le store (lazy refresh)
     const enriched = await Promise.all(follows.map(async (it) => {
       const appKey = it.app_pk;
       const [platform, bundleId] = appKey.split("#", 2);
 
-      const meta = await getOrRefreshMetadata(appKey, platform, bundleId); // <-- clé du correctif
+      const meta = await getOrRefreshMetadata(appKey, platform, bundleId);
+      const total = totals.get(appKey) ?? 0;
+      const seen = seenMap.get(appKey)?.last_seen_total ?? 0;
+      const lastSeenAt = seenMap.get(appKey)?.last_seen_at ?? null;
+      const badge = Math.max(0, total - seen);
 
       return {
         bundleId,
@@ -335,13 +359,61 @@ export async function getFollowedApps(req, res) {
         rating: meta?.rating ?? null,
         releaseNotes: meta?.releaseNotes ?? null,
         lastUpdatedAt: meta?.lastUpdatedAt ?? null,
-        linked_app_pks: dedup(linksMap[appKey])
+        linked_app_pks: dedup(linksMap[appKey]),
+        badge_count: badge,
+        total_reviews: total,
+        last_seen_total: seen,
+        last_seen_at: lastSeenAt
       };
     }));
 
     return res.status(200).json({ followed: enriched });
   } catch (err) {
     console.error("Erreur getFollowedApps:", err);
+    return res.status(500).json({ error: "Erreur serveur" });
+  }
+}
+
+export async function markFollowRead(req, res) {
+  const userId = req.auth?.sub;
+  const { platform, bundleId } = req.body || {};
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!platform || !bundleId) {
+    return res.status(400).json({ error: "platform et bundleId sont requis" });
+  }
+  const pk = appKeyOf(platform, bundleId);
+
+  try {
+    // Récupère le total_reviews actuel (source de vérité = APPS_METADATA_TABLE)
+    const meta = await ddb.send(new GetCommand({
+      TableName: APPS_METADATA_TABLE,
+      Key: { app_pk: pk },
+      ProjectionExpression: "app_pk, #c",
+      ExpressionAttributeNames: { "#c": "total_reviews" }
+    }));
+    const total = Number.isFinite(meta.Item?.["total_reviews"]) ? meta.Item.total_reviews : 0;
+    const nowIso = new Date().toISOString();
+
+    // Update strict: seulement si l'user suit déjà l'app (évite un upsert fantôme)
+    await ddb.send(new UpdateCommand({
+      TableName: USER_FOLLOWS_TABLE,
+      Key: { user_id: userId, app_pk: pk },
+      UpdateExpression: "SET last_seen_total = :seen, last_seen_at = :at",
+      ConditionExpression: "attribute_exists(user_id) AND attribute_exists(app_pk)",
+      ExpressionAttributeValues: { ":seen": total, ":at": nowIso }
+    }));
+
+    return res.status(200).json({
+      ok: true,
+      app_pk: pk,
+      last_seen_total: total,
+      last_seen_at: nowIso
+    });
+  } catch (err) {
+    if (err?.name === "ConditionalCheckFailedException") {
+      return res.status(404).json({ ok: false, error: "not_following" });
+    }
+    console.error("Erreur markFollowRead:", err);
     return res.status(500).json({ error: "Erreur serveur" });
   }
 }

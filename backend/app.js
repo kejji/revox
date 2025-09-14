@@ -7,11 +7,10 @@ import { searchApp } from "./searchApp.js";
 import { listReviews } from "./reviews.js";
 import { exportReviewsCsv } from "./reviewsExport.js";
 import { dispatchIncrementalIngest } from "./ingest.js";
-import { followApp, unfollowApp, getFollowedApps } from "./followApp.js";
+import { followApp, unfollowApp, getFollowedApps, markFollowRead } from "./followApp.js";
 import { upsertSchedule, getSchedule, listSchedules } from "./schedule.js";
 import { mergeApps, unmergeApps } from "./appsMerge.js";
 import { getReviewsThemes } from "./reviewsThemes.js";
-import { getFollowBadges, markFollowRead } from "./followCounts.js";
 
 const app = express();
 
@@ -118,11 +117,6 @@ app.delete("/apps/merge", (req, res) => {
 app.get("/reviews/themes", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   getReviewsThemes(req, res);
-});
-
-app.get("/follow-app/badges", (req, res) => {
-  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
-  getFollowBadges(req, res);
 });
 
 app.put("/follow-app/mark-read", (req, res) => {
