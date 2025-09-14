@@ -253,20 +253,7 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "cognito-idp:DescribeUserPoolClient"
         ],
         Resource = "*"
-      },
-
-      ### --- COMPREHEND ---
-      {
-        Sid    = "ComprehendAccess",
-        Effect = "Allow",
-        Action = [
-          "comprehend:BatchDetectTargetedSentiment",
-          "comprehend:BatchDetectSentiment",
-          "comprehend:BatchDetectKeyPhrases",
-          "comprehend:DetectDominantLanguage"
-        ],
-        Resource = "*"
-     }
+      }
     ]
   })
 }
@@ -274,4 +261,10 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
 resource "aws_iam_user_policy_attachment" "attach_revox_policy" {
   user       = aws_iam_user.terraform_user.name
   policy_arn = aws_iam_policy.revox_terraform_permissions.arn
+}
+
+# Accès lecture Dynamodb pour terraform-user
+resource "aws_iam_user_policy_attachment" "terraform_user_dynamodb_ro" {
+  user       = aws_iam_user.terraform_user.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess"
 }

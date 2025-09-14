@@ -8,19 +8,39 @@
 // -------------------------------------------------------------------
 
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } = require("@aws-sdk/lib-dynamodb");
 
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION || "eu-west-3";
-const TABLE  = process.env.APP_REVIEWS_TABLE;
+const REVIEWS_TABLE  = process.env.APP_REVIEWS_TABLE;
 const FIRST_RUN_DAYS = 150;
 const MAX_BACKFILL_DAYS = 30;
+const METADATA_TABLE = process.env.APPS_METADATA_TABLE;
 
 // ---------- Clients ----------
 const ddbDoc = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
+
+
+// ---------- Helper ----------
+async function bumpAppReviewCounter({ platform, bundleId, inserted }) {
+  if (!inserted || inserted <= 0) return;
+  const pk = appPk(platform, bundleId);
+  try {
+    await ddbDoc.send(new UpdateCommand({
+      TableName: METADATA_TABLE,
+      Key: { app_pk: pk },
+      // ADD est atomique; on set aussi un "last_ingest_at" pour info
+      UpdateExpression: `ADD total_reviews :inc SET last_ingest_at = :now`,
+      ExpressionAttributeValues: { ":inc": inserted, ":now": new Date().toISOString() },
+    }));
+    console.log(`[COUNTER] ${pk} += ${inserted}`);
+  } catch (e) {
+    console.error("[COUNTER] update error:", e?.message || e);
+  }
+}
 
 // ---------- Utils ----------
 const toMillis = (v) => (v instanceof Date) ? v.getTime() : (Number.isFinite(+v) ? +v : Date.parse(v));
@@ -48,7 +68,7 @@ function normalizeBackfillDays(v, def = 2) {
 }
 async function getLatestReviewItem(platform, bundleId) {
   const out = await ddbDoc.send(new QueryCommand({
-    TableName: TABLE,
+    TableName: REVIEWS_TABLE,
     KeyConditionExpression: "app_pk = :pk",
     ExpressionAttributeValues: { ":pk": appPk(platform, bundleId) },
     ScanIndexForward: false,
@@ -105,7 +125,7 @@ async function saveReviewToDDB(raw, { cache }) {
   const cacheKey = item.ts_review;
   if (cache && cache.has(cacheKey)) return;
   await ddbDoc.send(new PutCommand({
-    TableName: TABLE,
+    TableName: REVIEWS_TABLE,
     Item: item,
     ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)"
   }));
@@ -230,6 +250,7 @@ exports.handler = async (event) => {
     try {
       const stats = await runIncremental({ appName, platform, bundleId, backfillDays, gplay, store });
       console.log("[INC] Résultat:", stats);
+      await bumpAppReviewCounter({ platform, bundleId, inserted: stats.inserted });
     } catch (e) {
       console.error("Erreur worker:", e?.message || e);
     }

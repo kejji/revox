@@ -398,6 +398,7 @@ resource "aws_lambda_function" "worker" {
   environment {
     variables = {
       APP_REVIEWS_TABLE = aws_dynamodb_table.app_reviews.name
+      APPS_METADATA_TABLE             = aws_dynamodb_table.apps_metadata.name
     }
   }
 
@@ -539,28 +540,6 @@ resource "aws_kms_key" "lambda_env" {
   description             = "Clé KMS pour les variables d’environnement Lambda"
   deletion_window_in_days = 7
   enable_key_rotation     = true
-}
-
-# Permissions Comprehend (batch)
-resource "aws_iam_role_policy" "lambda_comprehend_inline" {
-  name = "lambda-comprehend-inline"
-  role = aws_iam_role.lambda_exec.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "comprehend:BatchDetectTargetedSentiment",
-          "comprehend:BatchDetectSentiment",
-          "comprehend:BatchDetectKeyPhrases",
-          "comprehend:DetectDominantLanguage"
-        ],
-        Resource = "*"
-      }
-    ]
-  })
 }
 
 # permissions secrets manager

@@ -200,13 +200,26 @@ export async function followApp(req, res) {
 
   const appKey = `${String(platform).toLowerCase()}#${bundleId}`;
   const nowIso = new Date().toISOString();
+  const app = await ddb.send(new GetCommand({
+    TableName: APPS_TABLE,
+    Key: { app_pk },
+    ProjectionExpression: "app_pk, #c",
+    ExpressionAttributeNames: { "#c": "total_reviews" }
+  }));
+  const total = app.Item?.["total_reviews"] || 0;
 
   try {
     // 1) Lien user → app (idempotent)
     try {
       await ddb.send(new PutCommand({
         TableName: USER_FOLLOWS_TABLE,
-        Item: { user_id: userId, app_pk: appKey, followed_at: nowIso },
+        Item: { 
+          user_id: userId, 
+          app_pk: appKey, 
+          followed_at: nowIso,
+          last_seen_total: total,
+          last_seen_at: new Date().toISOString()
+       },
         ConditionExpression: "attribute_not_exists(user_id) AND attribute_not_exists(app_pk)"
       }));
     } catch (e) {
