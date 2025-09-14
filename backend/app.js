@@ -1,4 +1,5 @@
 // backend/app.js
+import dotenv from "dotenv/config";
 import express from "express";
 import cors from "cors";
 import decodeJwtSub from "./auth.js";
@@ -9,20 +10,18 @@ import { dispatchIncrementalIngest } from "./ingest.js";
 import { followApp, unfollowApp, getFollowedApps } from "./followApp.js";
 import { upsertSchedule, getSchedule, listSchedules } from "./schedule.js";
 import { mergeApps, unmergeApps } from "./appsMerge.js";
-
-import dotenv from "dotenv";
-dotenv.config();
+import { getReviewsThemes } from "./reviewsThemes.js";
 
 const app = express();
 
-const allowedOrigins = [ "http://localhost:8080", 
-                          "https://lovable.dev", 
-                          "https://preview--revox-frontend.lovable.app", 
-                          "https://lovable.app", 
-                          "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.lovableproject.com",
-                          "https://id-preview--c9a1ce22-5aa0-4154-9698-a80bfd723859.lovable.app",
-                          "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev"
-                        ];
+const allowedOrigins = ["http://localhost:8080",
+  "https://lovable.dev",
+  "https://preview--revox-frontend.lovable.app",
+  "https://lovable.app",
+  "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.lovableproject.com",
+  "https://id-preview--c9a1ce22-5aa0-4154-9698-a80bfd723859.lovable.app",
+  "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev"
+];
 
 const corsOptions = {
   origin: (origin, cb) => {
@@ -112,6 +111,11 @@ app.post("/apps/merge", (req, res) => {
 app.delete("/apps/merge", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   unmergeApps(req, res);
+});
+
+app.get("/reviews/themes", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getReviewsThemes(req, res);
 });
 
 export default app;

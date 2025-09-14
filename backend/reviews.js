@@ -6,7 +6,7 @@ const ddb = DynamoDBDocumentClient.from(
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
-const REVIEWS_TABLE = process.env.REVIEWS_TABLE || process.env.REVOX_REVIEWS_TABLE || "revox_app_reviews";
+const REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 
 function b64(obj) { return Buffer.from(JSON.stringify(obj)).toString("base64"); }
 function unb64(s) { return s ? JSON.parse(Buffer.from(s, "base64").toString("utf-8")) : undefined; }
