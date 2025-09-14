@@ -279,6 +279,49 @@ GET /reviews/themes?app_pk=android%23com.fortuneo.android&count=200
 
 ---
 
+### 🔔 Badges “nouveaux avis”
+**GET** `/follow-app/badges`  
+**Auth** : ✅  
+**Description** : Pour chaque app suivie par l’utilisateur, renvoie le nombre d’avis non lus depuis son dernier “vu”.  
+
+**Réponse**
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "app_pk": "android#com.fortuneo.android",
+      "badge_count": 7,
+      "total_reviews": 1234,
+      "last_seen_total": 1227,
+      "last_seen_at": "2025-09-13T22:04:11.091Z"
+    }
+  ]
+}
+```
+
+---
+
+**PUT** `/follow-app/mark-read`  
+**Description** : Marque une app comme “vue” par l’utilisateur et remet le compteur de badge à zéro.  
+
+**Body**
+```json
+{ "platform": "android", "bundleId": "com.fortuneo.android" }
+```
+
+**Réponse**
+```json
+{
+  "ok": true,
+  "app_pk": "android#com.fortuneo.android",
+  "last_seen_total": 1234,
+  "last_seen_at": "2025-09-14T09:01:22.000Z"
+}
+```
+
+---
+
 ## 🗃️ Tables DynamoDB
 
 | Table                 | PK            | SK         | Description                          |
