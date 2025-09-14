@@ -181,10 +181,101 @@ GET /reviews?app_pk=android%23com.fortuneo.android,ios%23310633997&limit=50
 
 ---
 
+### 🧑‍🔬 Analyse de thèmes
+**GET** `/reviews/themes`  
+**Description** : Analyse les avis et en extrait automatiquement des **axes thématiques** (positifs et négatifs).  
+Basé sur un modèle IA (OpenAI), avec déduplication et fusion de synonymes.  
+Renvoie les **top 3 négatifs** et **top 3 positifs**, plus un breakdown complet par axe.
+
+**Query params** :  
+| Paramètre   | Type                 | Requis | Exemple |
+|-------------|----------------------|--------|---------|
+| `app_pk`    | string (mono **ou** multi, séparé par virgules) | ✅ | `android%23com.fortuneo.android,ios%23com.fortuneo.fortuneo` |
+| `from` / `to` | ISO date | optionnel | `2025-08-01T00:00:00.000Z` / `2025-09-01T23:59:59.999Z` |
+| `count`     | number | optionnel (exclusif avec `from/to`) | `200` |
+| `pos_cutoff`| number (0..5, défaut 4) | optionnel | `4` |
+| `neg_cutoff`| number (0..5, défaut 3) | optionnel | `3` |
+| `topn`      | number (1..5, défaut 3) | optionnel | `3` |
+| `include_breakdown` | 0/1 | optionnel | `1` |
+
+**Exemple 1 — par période**
+```http
+GET /reviews/themes?app_pk=android%23com.fortuneo.android&from=2025-08-01T00:00:00.000Z&to=2025-09-01T23:59:59.999Z
+```
+
+**Exemple 2 — par nombre d’avis récents**
+```http
+GET /reviews/themes?app_pk=android%23com.fortuneo.android&count=200
+```
+
+**Exemple réponse**
+```json
+{
+  "ok": true,
+  "params": {
+    "app_pks": ["android#com.fortuneo.android"],
+    "from": "2025-08-01T00:00:00.000Z",
+    "to": "2025-09-01T23:59:59.999Z",
+    "count": 200,
+    "total_reviews": 200,
+    "pos_cutoff": 4,
+    "neg_cutoff": 3,
+    "model": "gpt-4o-mini"
+  },
+  "top_negative_axes": [
+    {
+      "axis_id":"service_client",
+      "axis_label":"Service client / Réactivité",
+      "count":12,
+      "avg_rating":1.2,
+      "examples":[ ... ]
+    }
+  ],
+  "top_positive_axes": [
+    {
+      "axis_id":"ergonomie",
+      "axis_label":"Ergonomie / Simplicité",
+      "count":8,
+      "avg_rating":4.6,
+      "examples":[ ... ]
+    }
+  ],
+  "axes": [ ... ]
+}
+```
+---
+
 ### ⏱️ Programmer l’ingestion
 **PUT** `/ingest/schedule`  
 **GET** `/ingest/schedule`  
 **GET** `/ingest/schedule/list`
+
+---
+
+**Exemple 1 — par période**
+```http
+GET /reviews/themes?app_pk=android%23com.fortuneo.android&from=2025-08-01T00:00:00.000Z&to=2025-09-01T23:59:59.999Z
+```
+
+**Exemple 2 — par nombre d’avis récents**
+```http
+GET /reviews/themes?app_pk=android%23com.fortuneo.android&count=200
+```
+
+**Exemple réponse**
+```json
+{
+  "ok": true,
+  "top_negative_axes": [
+    { "axis_id":"card_issues","axis_label":"Carte / Blocages","count":26,"avg_rating":1.69,"examples":[ ... ] },
+    { "axis_id":"customer_support","axis_label":"Service client","count":15,"avg_rating":1.47,"examples":[ ... ] }
+  ],
+  "top_positive_axes": [
+    { "axis_id":"fees_pricing","axis_label":"Tarifs / Frais","count":3,"avg_rating":4.67,"examples":[ ... ] }
+  ],
+  "axes": [ ... ]
+}
+```
 
 ---
 
