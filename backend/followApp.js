@@ -113,7 +113,6 @@ async function upsertAppMetadata(appKey, bundleId, platform) {
           "#bundleId = :bundleId, " +
           "#version = :version, " +
           "#rating = :rating, " +
-          "#ratingCount = :ratingCount, " +
           "#releaseNotes = :releaseNotes, " +
           "#lastUpdatedAt = :lastUpdatedAt, " +
           "#lastUpdated = :now",
@@ -124,7 +123,6 @@ async function upsertAppMetadata(appKey, bundleId, platform) {
           "#bundleId": "bundleId",
           "#version": "version",
           "#rating": "rating",
-          "#ratingCount": "ratingCount",
           "#releaseNotes": "releaseNotes",
           "#lastUpdatedAt": "lastUpdatedAt",
           "#lastUpdated": "lastUpdated",
@@ -136,7 +134,6 @@ async function upsertAppMetadata(appKey, bundleId, platform) {
           ":bundleId": bundleId,
           ":version": meta.version ?? null,
           ":rating": meta.rating ?? null,
-          ":ratingCount": meta.ratingCount ?? null,
           ":releaseNotes": meta.releaseNotes ?? null,
           ":lastUpdatedAt": meta.lastUpdatedAt ?? null,
           ":now": new Date().toISOString()
@@ -175,7 +172,6 @@ async function getOrRefreshMetadata(appKey, platform, bundleId) {
         "#bundleId = :bundleId, " +
         "#version = :version, " +
         "#rating = :rating, " +
-        "#ratingCount = :ratingCount, " +
         "#releaseNotes = :releaseNotes, " +
         "#lastUpdatedAt = :lastUpdatedAt, " +
         "#lastUpdated = :now",
@@ -186,7 +182,6 @@ async function getOrRefreshMetadata(appKey, platform, bundleId) {
         "#bundleId": "bundleId",
         "#version": "version",
         "#rating": "rating",
-        "#ratingCount": "ratingCount",
         "#releaseNotes": "releaseNotes",
         "#lastUpdatedAt": "lastUpdatedAt",
         "#lastUpdated": "lastUpdated",
@@ -198,7 +193,6 @@ async function getOrRefreshMetadata(appKey, platform, bundleId) {
         ":bundleId": bundleId,
         ":version": fresh.version ?? null,
         ":rating": fresh.rating ?? null,
-        ":ratingCount": fresh.ratingCount ?? null,
         ":releaseNotes": fresh.releaseNotes ?? null,
         ":lastUpdatedAt": fresh.lastUpdatedAt ?? null,
         ":now": new Date().toISOString()
@@ -339,7 +333,6 @@ export async function getFollowedApps(req, res) {
         icon: meta?.icon ?? null,
         version: meta?.version ?? null,
         rating: meta?.rating ?? null,
-        ratingCount: meta?.ratingCount ?? null,
         releaseNotes: meta?.releaseNotes ?? null,
         lastUpdatedAt: meta?.lastUpdatedAt ?? null,
         linked_app_pks: dedup(linksMap[appKey])

@@ -3,7 +3,7 @@ import https from "https";
 
 /**
  * Récupère les métadonnées d'une app sur le store en fonction du bundleId et de la plateforme.
- * Retourne : { name, icon, version, rating, ratingCount, releaseNotes, lastUpdatedAt, source }
+ * Retourne : { name, icon, version, rating, releaseNotes, lastUpdatedAt, source }
  */
 export async function searchAppMetadata(bundleId, platform) {
   try {
@@ -18,7 +18,6 @@ export async function searchAppMetadata(bundleId, platform) {
         icon: app.icon,
         version: app.version ?? null,
         rating: typeof app.score === "number" ? round2(app.score) : null,
-        ratingCount: (app.ratings ?? app.ratingsCount) ?? null,
         // Les notes de version Play peuvent contenir du HTML (ex : <br/>)
         releaseNotes: app.recentChanges ? stripHtml(app.recentChanges) : null,
         // google-play-scraper expose souvent 'updated' en ms → ISO
@@ -38,7 +37,6 @@ export async function searchAppMetadata(bundleId, platform) {
         icon: app.artworkUrl512 || app.artworkUrl100 || null,
         version: app.version ?? null,
         rating: typeof app.averageUserRating === "number" ? round2(app.averageUserRating) : null,
-        ratingCount: app.userRatingCount ?? null,
         releaseNotes: app.releaseNotes ?? null,
         lastUpdatedAt: app.currentVersionReleaseDate || app.releaseDate || null,
         source: "app-store",
