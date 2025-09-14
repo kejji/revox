@@ -39,12 +39,13 @@ async function ensureScheduleForApp(appKey, bundleId, platform) {
   await ddb.send(new UpdateCommand({
     TableName: APPS_INGEST_SCHEDULE_TABLE,
     Key: { app_pk: appKey },
-    UpdateExpression: "SET appName = if_not_exists(appName, :appName), interval_minutes = if_not_exists(interval_minutes, :interval), enabled = if_not_exists(enabled, :enabled), created_at = if_not_exists(created_at, :now), next_run_at = if_not_exists(next_run_at, :now)",
+    UpdateExpression: "SET appName = if_not_exists(appName, :appName), interval_minutes = if_not_exists(interval_minutes, :interval), enabled = if_not_exists(enabled, :enabled), created_at = if_not_exists(created_at, :now), next_run_at = if_not_exists(next_run_at, :now), due_pk = if_not_exists(due_pk, :due)",
     ExpressionAttributeValues: {
       ":appName": null,
       ":interval": DEFAULT_INTERVAL_MIN,
       ":enabled": true,
-      ":now": now
+      ":now": now,
+      ":due": "DUE"
     }
   }));
 
@@ -202,7 +203,7 @@ export async function followApp(req, res) {
   const nowIso = new Date().toISOString();
   const app = await ddb.send(new GetCommand({
     TableName: APPS_METADATA_TABLE,
-    Key: { app_pk },
+    Key: { app_pk: appKey },
     ProjectionExpression: "app_pk, #c",
     ExpressionAttributeNames: { "#c": "total_reviews" }
   }));
@@ -213,13 +214,13 @@ export async function followApp(req, res) {
     try {
       await ddb.send(new PutCommand({
         TableName: USER_FOLLOWS_TABLE,
-        Item: { 
-          user_id: userId, 
-          app_pk: appKey, 
+        Item: {
+          user_id: userId,
+          app_pk: appKey,
           followed_at: nowIso,
           last_seen_total: total,
           last_seen_at: new Date().toISOString()
-       },
+        },
         ConditionExpression: "attribute_not_exists(user_id) AND attribute_not_exists(app_pk)"
       }));
     } catch (e) {
@@ -227,10 +228,10 @@ export async function followApp(req, res) {
     }
 
     // 2) Upsert metadata (name, icon, version, rating, releaseNotes…)
-    await upsertAppMetadata(appKey, bundleId, platform); //  [oai_citation:1‡followApp.js](file-service://file-Wcd5ptB7WhixaMXDTtsYAr)
+    await upsertAppMetadata(appKey, bundleId, platform);
 
     // 3) Assure un planning d’ingestion
-    const sched = await ensureScheduleForApp(appKey, bundleId, platform); //  [oai_citation:2‡followApp.js](file-service://file-Wcd5ptB7WhixaMXDTtsYAr)
+    const sched = await ensureScheduleForApp(appKey, bundleId, platform);
 
     // 4) Déclenche ingestion immédiate puis décale next_run_at
     try {
@@ -239,10 +240,14 @@ export async function followApp(req, res) {
       const next = now + minutes(sched?.schedule?.interval_minutes ?? DEFAULT_INTERVAL_MIN);
       await ddb.send(new UpdateCommand({
         TableName: APPS_INGEST_SCHEDULE_TABLE,
-        Key: { app_pk: appKey, due_pk: "DUE" },
-        UpdateExpression: "SET last_enqueued_at = :now, next_run_at = :next, enabled = :enabled, interval_minutes = if_not_exists(interval_minutes, :interval)",
+        Key: { app_pk: appKey },
+        UpdateExpression: "SET due_pk = if_not_exists(due_pk, :due), last_enqueued_at = :now, next_run_at = :next, enabled = :enabled, interval_minutes = if_not_exists(interval_minutes, :interval)",
         ExpressionAttributeValues: {
-          ":now": now, ":next": next, ":enabled": true, ":interval": DEFAULT_INTERVAL_MIN
+          ":due": "DUE",
+          ":now": now,
+          ":next": next,
+          ":enabled": true,
+          ":interval": DEFAULT_INTERVAL_MIN
         }
       }));
     } catch (e) {
