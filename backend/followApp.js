@@ -347,13 +347,14 @@ export async function getFollowedApps(req, res) {
 
       const meta = await getOrRefreshMetadata(appKey, platform, bundleId);
       const total = totals.get(appKey) ?? 0;
-      const seen = seenMap.get(appKey)?.last_seen_total ?? 0;
+      const rawSeen = seenMap.get(appKey)?.last_seen_total ?? 0;
       const lastSeenAt = seenMap.get(appKey)?.last_seen_at ?? null;
       const suppressIso = seenMap.get(appKey)?.suppress_badge_until || null;
-      let badge = Math.max(0, total - seen);
-      if (suppressIso && Date.now() < Date.parse(suppressIso)) {
-        badge = 0;
-      }
+      const graceActive = suppressIso && Date.now() < Date.parse(suppressIso);
+      // Pendant la grâce : on “promote” la valeur retournée au front,
+      // sans toucher à la BDD (évite badge fantôme et seen=0 visuellement).
+      const effectiveSeen = graceActive ? Math.max(rawSeen, total) : rawSeen;
+      const badge = Math.max(0, total - effectiveSeen);
 
       return {
         bundleId,
@@ -367,7 +368,7 @@ export async function getFollowedApps(req, res) {
         linked_app_pks: dedup(linksMap[appKey]),
         badge_count: badge,
         total_reviews: total,
-        last_seen_total: seen,
+        last_seen_total: effectiveSeen,
         last_seen_at: lastSeenAt
       };
     }));
