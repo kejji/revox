@@ -262,7 +262,8 @@ resource "aws_apigatewayv2_api" "http_api" {
                       "https://lovable.app", 
                       "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.lovableproject.com",
                       "https://id-preview--c9a1ce22-5aa0-4154-9698-a80bfd723859.lovable.app",
-                      "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev"
+                      "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev",
+                      "https://gptengineer-revox-83bd2a.lovable.app"
                     ]
     allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
     allow_headers = ["Authorization", "Content-Type"]
