@@ -265,7 +265,7 @@ resource "aws_apigatewayv2_api" "http_api" {
                       "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev",
                       "https://gptengineer-revox-83bd2a.lovable.app"
                     ]
-    allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
+    allow_methods = ["GET", "POST", "DELETE", "OPTIONS", "PUT"]
     allow_headers = ["Authorization", "Content-Type"]
     max_age       = 600
   }
