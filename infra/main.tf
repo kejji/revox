@@ -362,12 +362,15 @@ resource "aws_lambda_function" "api" {
   kms_key_arn      = aws_kms_key.lambda_env.arn
   environment {
     variables = {
-      APP_REVIEWS_TABLE    = aws_dynamodb_table.app_reviews.name
-      EXTRACTION_QUEUE_URL = aws_sqs_queue.extraction_queue.url
-      USER_FOLLOWS_TABLE = aws_dynamodb_table.user_follows.name
-      APPS_METADATA_TABLE = aws_dynamodb_table.apps_metadata.name
-      APPS_INGEST_SCHEDULE_TABLE        = aws_dynamodb_table.apps_ingest_schedule.name
-      DEFAULT_INGEST_INTERVAL_MINUTES  = var.default_ingest_interval_minutes
+      APP_REVIEWS_TABLE               = aws_dynamodb_table.app_reviews.name
+      EXTRACTION_QUEUE_URL            = aws_sqs_queue.extraction_queue.url
+      USER_FOLLOWS_TABLE              = aws_dynamodb_table.user_follows.name
+      APPS_METADATA_TABLE             = aws_dynamodb_table.apps_metadata.name
+      APPS_INGEST_SCHEDULE_TABLE      = aws_dynamodb_table.apps_ingest_schedule.name
+      DEFAULT_INGEST_INTERVAL_MINUTES = var.default_ingest_interval_minutes
+      OPENAI_SECRET_NAME              = var.openai_secret_name
+      OPENAI_MODEL                    = var.openai_model
+      OPENAI_URL                      = var.openai_url
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
@@ -536,6 +539,47 @@ resource "aws_kms_key" "lambda_env" {
   description             = "Clé KMS pour les variables d’environnement Lambda"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+}
+
+# Permissions Comprehend (batch)
+resource "aws_iam_role_policy" "lambda_comprehend_inline" {
+  name = "lambda-comprehend-inline"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "comprehend:BatchDetectTargetedSentiment",
+          "comprehend:BatchDetectSentiment",
+          "comprehend:BatchDetectKeyPhrases",
+          "comprehend:DetectDominantLanguage"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# permissions secrets manager
+resource "aws_iam_role_policy" "lambda_secrets" {
+  name = "lambda-secrets"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 # Policy KMS autorisant le rôle Lambda à déchiffrer les variables

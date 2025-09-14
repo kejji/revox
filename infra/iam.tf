@@ -253,7 +253,20 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "cognito-idp:DescribeUserPoolClient"
         ],
         Resource = "*"
-      }
+      },
+
+      ### --- COMPREHEND ---
+      {
+        Sid    = "ComprehendAccess",
+        Effect = "Allow",
+        Action = [
+          "comprehend:BatchDetectTargetedSentiment",
+          "comprehend:BatchDetectSentiment",
+          "comprehend:BatchDetectKeyPhrases",
+          "comprehend:DetectDominantLanguage"
+        ],
+        Resource = "*"
+     }
     ]
   })
 }
@@ -261,4 +274,9 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
 resource "aws_iam_user_policy_attachment" "attach_revox_policy" {
   user       = aws_iam_user.terraform_user.name
   policy_arn = aws_iam_policy.revox_terraform_permissions.arn
+}
+
+# Datasource pour pointer vers le secret OpenAI
+data "aws_secretsmanager_secret" "openai" {
+  name = var.openai_secret_name
 }

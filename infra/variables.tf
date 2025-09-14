@@ -29,3 +29,21 @@ variable "ingest_scheduler_rate_expression" {
   type    = string
   default = "rate(5 minutes)"
 }
+
+variable "openai_secret_name" {
+  description = "Nom du secret Secrets Manager qui contient la clé OpenAI (le champ 'secretString')"
+  type        = string
+  default     = "openai/api-key"
+}
+
+variable "openai_model" {
+  description = "Modèle OpenAI à utiliser"
+  type        = string
+  default     = "gpt-4o-mini"
+}
+
+variable "openai_url" {
+  description = "Endpoint Chat Completions OpenAI"
+  type        = string
+  default     = "https://api.openai.com/v1/chat/completions"
+}
