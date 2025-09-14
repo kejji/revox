@@ -30,21 +30,22 @@ const ddb = DynamoDBDocumentClient.from(
 
 const nowMs = () => Date.now();
 const minutes = (n) => n * 60 * 1000;
-
+const appKeyOf = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
 /* ===================== SCHEDULE ===================== */
 
-async function ensureScheduleForApp(appKey, bundleId, platform) {
+async function ensureScheduleForApp(appKey) {
   // On initialise l'item s'il n'existe pas, sans écraser s'il existe déjà
   const now = nowMs();
+  const nowIso = new Date().toISOString();
   await ddb.send(new UpdateCommand({
     TableName: APPS_INGEST_SCHEDULE_TABLE,
     Key: { app_pk: appKey },
-    UpdateExpression: "SET appName = if_not_exists(appName, :appName), interval_minutes = if_not_exists(interval_minutes, :interval), enabled = if_not_exists(enabled, :enabled), created_at = if_not_exists(created_at, :now), next_run_at = if_not_exists(next_run_at, :now), due_pk = if_not_exists(due_pk, :due)",
+    UpdateExpression: "SET interval_minutes = if_not_exists(interval_minutes, :interval), enabled = if_not_exists(enabled, :enabled), created_at = if_not_exists(created_at, :now), created_at_iso = if_not_exists(created_at_iso, :nowIso), next_run_at = if_not_exists(next_run_at, :now), next_run_at_iso = if_not_exists(next_run_at_iso, :nowIso), due_pk = if_not_exists(due_pk, :due)",
     ExpressionAttributeValues: {
-      ":appName": null,
       ":interval": DEFAULT_INTERVAL_MIN,
       ":enabled": true,
       ":now": now,
+      ":nowIso": nowIso,
       ":due": "DUE"
     }
   }));
@@ -56,8 +57,26 @@ async function ensureScheduleForApp(appKey, bundleId, platform) {
   return { created: !res.Item?.created_at || res.Item?.created_at === now, schedule: res.Item };
 }
 
-async function enqueueImmediateIngest({ appName, platform, bundleId, backfillDays = 2 }) {
+/* =============== SQS ENQUEUE =============== */
+// Envoie un message SQS en lisant le "name" depuis APPS_METADATA_TABLE (plus de dépendance à appName du schedule)
+async function enqueueImmediateIngest({ platform, bundleId, backfillDays = 2 }) {
   if (!QUEUE_URL) throw new Error("Missing EXTRACTION_QUEUE_URL");
+  const key = appKeyOf(platform, bundleId);
+
+  // Récupère le nom depuis la metadata table
+  let appName = null;
+  try {
+    const metaRes = await ddb.send(new GetCommand({
+      TableName: APPS_METADATA_TABLE,
+      Key: { app_pk: key },
+      ProjectionExpression: "#n",
+      ExpressionAttributeNames: { "#n": "name" }
+    }));
+    appName = metaRes.Item?.name ?? null;
+  } catch (e) {
+    console.warn("enqueueImmediateIngest: metadata read failed", e?.message || e);
+  }
+
   const payload = {
     mode: "incremental",
     appName,
@@ -199,7 +218,7 @@ export async function followApp(req, res) {
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   if (!bundleId || !platform) return res.status(400).json({ error: "bundleId et platform sont requis" });
 
-  const appKey = `${String(platform).toLowerCase()}#${bundleId}`;
+  const appKey = appKeyOf(platform, bundleId);
   const nowIso = new Date().toISOString();
   const app = await ddb.send(new GetCommand({
     TableName: APPS_METADATA_TABLE,
@@ -231,21 +250,23 @@ export async function followApp(req, res) {
     await upsertAppMetadata(appKey, bundleId, platform);
 
     // 3) Assure un planning d’ingestion
-    const sched = await ensureScheduleForApp(appKey, bundleId, platform);
+    const sched = await ensureScheduleForApp(appKey);
 
     // 4) Déclenche ingestion immédiate puis décale next_run_at
     try {
-      await enqueueImmediateIngest({ appName: sched?.schedule?.appName, platform, bundleId, backfillDays: 2 });
+      await enqueueImmediateIngest({ platform, bundleId, backfillDays: 2 });
       const now = nowMs();
       const next = now + minutes(sched?.schedule?.interval_minutes ?? DEFAULT_INTERVAL_MIN);
       await ddb.send(new UpdateCommand({
         TableName: APPS_INGEST_SCHEDULE_TABLE,
         Key: { app_pk: appKey },
-        UpdateExpression: "SET due_pk = if_not_exists(due_pk, :due), last_enqueued_at = :now, next_run_at = :next, enabled = :enabled, interval_minutes = if_not_exists(interval_minutes, :interval)",
+        UpdateExpression: "SET due_pk = if_not_exists(due_pk, :due), last_enqueued_at = :now, last_enqueued_at_iso = :nowIso, next_run_at = :next, next_run_at_iso = :nextIso, enabled = :enabled, interval_minutes = if_not_exists(interval_minutes, :interval)",
         ExpressionAttributeValues: {
           ":due": "DUE",
           ":now": now,
+          ":nowIso": new Date(now).toISOString(),
           ":next": next,
+          ":nextIso": new Date(next).toISOString(),
           ":enabled": true,
           ":interval": DEFAULT_INTERVAL_MIN
         }
