@@ -76,6 +76,7 @@ export async function markFollowRead(req, res) {
       TableName: USER_FOLLOWS_TABLE,
       Key: { user_id: userId, app_pk: pk },
       UpdateExpression: "SET last_seen_total = :seen, last_seen_at = :at",
+      ConditionExpression: "attribute_exists(user_id) AND attribute_exists(app_pk)",
       ExpressionAttributeValues: { ":seen": total, ":at": nowIso },
     }));
 
