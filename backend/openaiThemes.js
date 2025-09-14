@@ -3,7 +3,7 @@
 // --- Config OpenAI ---
 const OPENAI_URL   = process.env.OPENAI_URL;
 const OPENAI_MODEL = process.env.OPENAI_MODEL;
-const OPENAI_KEY   = process.env.OPENAI_API_KEY;
+let OPENAI_KEY   = process.env.OPENAI_API_KEY;
 
 async function ensureOpenAIKey() {
   if (OPENAI_KEY) return OPENAI_KEY;
