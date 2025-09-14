@@ -201,7 +201,7 @@ export async function followApp(req, res) {
   const appKey = `${String(platform).toLowerCase()}#${bundleId}`;
   const nowIso = new Date().toISOString();
   const app = await ddb.send(new GetCommand({
-    TableName: APPS_TABLE,
+    TableName: APPS_METADATA_TABLE,
     Key: { app_pk },
     ProjectionExpression: "app_pk, #c",
     ExpressionAttributeNames: { "#c": "total_reviews" }
