@@ -1,4 +1,5 @@
 // backend/openaiThemes.js
+import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 
 // --- Config OpenAI ---
 const OPENAI_URL   = process.env.OPENAI_URL;
