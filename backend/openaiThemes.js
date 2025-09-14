@@ -5,6 +5,25 @@ const OPENAI_URL   = process.env.OPENAI_URL;
 const OPENAI_MODEL = process.env.OPENAI_MODEL;
 const OPENAI_KEY   = process.env.OPENAI_API_KEY;
 
+async function ensureOpenAIKey() {
+  if (OPENAI_KEY) return OPENAI_KEY;
+  const secretName = process.env.OPENAI_SECRET_NAME; // ex: "openai/api-key"
+  if (!secretName) throw new Error("OPENAI_SECRET_NAME is missing");
+  const sm = new SecretsManagerClient({});
+  const out = await sm.send(new GetSecretValueCommand({ SecretId: secretName }));
+  // supporte soit secretString brut, soit JSON { api_key: "..." }
+  const raw = out.SecretString || "";
+  try {
+    const parsed = JSON.parse(raw);
+    OPENAI_KEY = parsed.api_key || parsed.key || parsed.OPENAI_API_KEY || raw;
+  } catch {
+    OPENAI_KEY = raw;
+  }
+  if (!OPENAI_KEY) throw new Error("OpenAI key not found in secret");
+  process.env.OPENAI_API_KEY = OPENAI_KEY; // utile pour les autres modules
+  return OPENAI_KEY;
+}
+
 // --- Utils ---
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : (s || ""));
 const toNum = (x) => (Number.isFinite(+x) ? +x : null);
@@ -154,6 +173,7 @@ export async function analyzeThemesWithOpenAI(
   { appPks, from, to, lang = "fr", posCutoff = 4, negCutoff = 3, topN = 3 },
   reviews
 ) {
+  await ensureOpenAIKey();
   if (!OPENAI_KEY) throw new Error("OPENAI_API_KEY is missing");
   if (!reviews?.length) return { top_negative_axes: [], top_positive_axes: [], axes: [] };
 

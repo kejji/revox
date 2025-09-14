@@ -639,4 +639,10 @@ resource "aws_lambda_permission" "allow_events_to_invoke_ingest_scheduler" {
   source_arn    = aws_cloudwatch_event_rule.revox_ingest_scheduler.arn
 }
 
+########################################
+# Secrets Manager pour OpenAI
+########################################
 
+data "aws_secretsmanager_secret" "openai" {
+  name = var.openai_secret_name
+}
