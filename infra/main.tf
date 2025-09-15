@@ -255,7 +255,7 @@ resource "aws_dynamodb_table" "apps_themes" {
 }
 
 ########################################
-# SQS : file pour orchestrer les extractions
+# SQS : queue pour les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {
   name                       = "revox-extraction-queue"
@@ -268,6 +268,23 @@ resource "aws_lambda_event_source_mapping" "worker_sqs" {
   event_source_arn = aws_sqs_queue.extraction_queue.arn
   function_name    = aws_lambda_function.worker.arn
   batch_size       = 1
+}
+
+########################################
+# SQS : queue pour l'analyse des thèmes
+########################################
+resource "aws_sqs_queue" "themes_queue" {
+  name                      = "revox-themes-queue"
+  visibility_timeout_seconds = 180
+  message_retention_seconds  = 1209600
+}
+
+# Liaison SQS -> Lambda themes worker
+resource "aws_lambda_event_source_mapping" "themes_sqs_to_lambda" {
+  event_source_arn = aws_sqs_queue.themes_queue.arn
+  function_name    = aws_lambda_function.themes_worker.arn
+  batch_size       = 5
+  enabled          = true
 }
 
 ########################################
@@ -481,7 +498,7 @@ resource "aws_lambda_function" "ingest_scheduler" {
     variables = {
       EXTRACTION_QUEUE_URL             = aws_sqs_queue.extraction_queue.url
       DEFAULT_INGEST_INTERVAL_MINUTES  = var.default_ingest_interval_minutes
-      APPS_INGEST_SCHEDULE_TABLE        = aws_dynamodb_table.apps_ingest_schedule.name
+      APPS_INGEST_SCHEDULE_TABLE       = aws_dynamodb_table.apps_ingest_schedule.name
       SCHED_BATCH_SIZE                 = var.sched_batch_size
       SCHED_LOCK_MS                    = var.sched_lock_ms
     }
@@ -495,6 +512,34 @@ resource "aws_lambda_function" "ingest_scheduler" {
   }
 }
 
+########################################
+#  Ressource gérant la lambda themes worker
+########################################
+resource "aws_lambda_function" "themes_worker" {
+  function_name = "revox-themes-worker"
+  role          = aws_iam_role.lambda_exec.arn
+  runtime       = "nodejs18.x"
+  handler       = "themesWorker.handler"
+  filename      = "${path.module}/dummy.zip"
+  timeout       = 180
+  environment {
+    variables = {
+      AWS_REGION              = var.aws_region
+      APP_REVIEWS_TABLE       = aws_dynamodb_table.app_reviews.name
+      APPS_THEMES_TABLE       = aws_dynamodb_table.apps_themes.name
+      OPENAI_URL              = var.openai_url
+      OPENAI_MODEL            = var.openai_model
+      OPENAI_SECRET_NAME      = var.openai_secret_name
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      filename,
+      source_code_hash,
+    ]
+  }
+}
 
 ########################################
 # CloudWatch Log Group pour les logs Lambda
