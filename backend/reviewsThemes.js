@@ -63,6 +63,8 @@ async function fetchReviewsLatest(appPk, count) {
   }));
 }
 
+export const fetchReviewsLatest2 = fetchReviewsLatest;
+
 export async function getReviewsThemes(req, res) {
   try {
     if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
