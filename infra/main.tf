@@ -232,6 +232,29 @@ resource "aws_dynamodb_table" "apps_ingest_schedule" {
 }
 
 ########################################
+# Table DynamoDB : APPS_THEMES
+########################################
+
+resource "aws_dynamodb_table" "apps_themes" {
+  name         = "apps_themes"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "app_pk"
+  range_key    = "sk"
+
+  attribute { 
+    name = "app_pk"
+    type = "S" 
+  }
+
+  attribute { 
+    name = "sk"     
+    type = "S" 
+  }
+
+  tags = { Name = "Theme summaries per app/day" }
+}
+
+########################################
 # SQS : file pour orchestrer les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {
@@ -372,6 +395,8 @@ resource "aws_lambda_function" "api" {
       OPENAI_SECRET_NAME              = var.openai_secret_name
       OPENAI_MODEL                    = var.openai_model
       OPENAI_URL                      = var.openai_url
+      APPS_THEMES_TABLE               = aws_dynamodb_table.apps_themes.name
+
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
@@ -398,8 +423,10 @@ resource "aws_lambda_function" "worker" {
 
   environment {
     variables = {
-      APP_REVIEWS_TABLE = aws_dynamodb_table.app_reviews.name
-      APPS_METADATA_TABLE             = aws_dynamodb_table.apps_metadata.name
+      APP_REVIEWS_TABLE   = aws_dynamodb_table.app_reviews.name
+      APPS_METADATA_TABLE = aws_dynamodb_table.apps_metadata.name
+      APPS_THEMES_TABLE   = aws_dynamodb_table.apps_themes.name
+
     }
   }
 

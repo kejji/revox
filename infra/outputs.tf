@@ -45,3 +45,7 @@ output "apps_metadata_table_name" {
 output "apps_ingest_schedule_table_name" {
   value = trimspace(aws_dynamodb_table.apps_ingest_schedule.name)
 }
+
+output "apps_themes_table_name" {
+  value = trimspace(aws_dynamodb_table.apps_themes.name)
+}
