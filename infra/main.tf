@@ -524,7 +524,6 @@ resource "aws_lambda_function" "themes_worker" {
   timeout       = 180
   environment {
     variables = {
-      AWS_REGION              = var.aws_region
       APP_REVIEWS_TABLE       = aws_dynamodb_table.app_reviews.name
       APPS_THEMES_TABLE       = aws_dynamodb_table.apps_themes.name
       OPENAI_URL              = var.openai_url

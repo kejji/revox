@@ -45,8 +45,11 @@ jobs:
       - name: Bundle ingestScheduler
         run: npx esbuild ingestScheduler.js --bundle --platform=node --target=node20 --outfile=../ingestScheduler.js
 
+      - name: Bundle themesWorker
+        run: npx esbuild themesWorker.js --bundle --platform=node --target=node20 --outfile=../themesWorker.js
+
       - name: Package bundle into zip
-        run: zip revox-backend.zip index.js worker.js userSync.js ingestScheduler.js
+        run: zip revox-backend.zip index.js worker.js userSync.js ingestScheduler.js themesWorker.js
         working-directory: .
 
       - name: Debug zip content
