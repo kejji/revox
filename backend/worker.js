@@ -329,7 +329,6 @@ async function handleAnalyzeThemes({ app_pk, from, to, limit }) {
     reviews = await fetchReviewsRange(app_pk, fromISO, toISO, 2000);
     selection = { from: fromISO, to: toISO };
   } else if (limit) {
-    // appeler bien fetchReviewsLatest (sans "2")
     reviews = await fetchReviewsLatest(app_pk, Number(limit));
     selection = { limit: Number(limit) };
   } else {
