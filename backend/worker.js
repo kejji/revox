@@ -1,6 +1,6 @@
 // worker.js — Ingestion simple & idempotente de reviews vers DynamoDB
 // -------------------------------------------------------------------
-// SQS message attendu: { appName, platform: "android"|"ios", bundleId, backfillDays? }
+// SQS message attendu: { platform: "android"|"ios", bundleId, backfillDays? }
 //
 // ENV requises:
 //   - AWS_REGION
@@ -12,7 +12,7 @@ const { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } = requ
 
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION || "eu-west-3";
-const REVIEWS_TABLE  = process.env.APP_REVIEWS_TABLE;
+const REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 const FIRST_RUN_DAYS = 150;
 const MAX_BACKFILL_DAYS = 30;
 const METADATA_TABLE = process.env.APPS_METADATA_TABLE;
@@ -42,11 +42,38 @@ async function bumpAppReviewCounter({ platform, bundleId, inserted }) {
   }
 }
 
+// ---------- Lookup helpers ----------
+async function getAppNameFromMetadata(platform, bundleId) {
+  if (!METADATA_TABLE) return null;
+  try {
+    const pk = appPk(platform, bundleId);
+    const out = await ddbDoc.send(new QueryCommand({
+      TableName: METADATA_TABLE,
+      // NB: on a une PK simple sur app_pk → GetItem serait suffisant, mais on garde la même lib
+      // Si tu préfères: use GetCommand avec Key: { app_pk: pk }
+    }));
+  } catch { }
+  try {
+    const pk = appPk(platform, bundleId);
+    const { GetCommand } = require("@aws-sdk/lib-dynamodb");
+    const got = await ddbDoc.send(new GetCommand({
+      TableName: METADATA_TABLE,
+      Key: { app_pk: pk },
+      ProjectionExpression: "#n",
+      ExpressionAttributeNames: { "#n": "name" }
+    }));
+    return got?.Item?.name ?? null;
+  } catch (e) {
+    console.warn("[worker] getAppNameFromMetadata error:", e?.message || e);
+    return null;
+  }
+}
+
 // ---------- Utils ----------
 const toMillis = (v) => (v instanceof Date) ? v.getTime() : (Number.isFinite(+v) ? +v : Date.parse(v));
 const toISODate = (v) => new Date(toMillis(v)).toISOString();
 const norm = (s) => (s ?? "").toString().trim().toLowerCase();
-function hashFNV1a(str = "") { let h = 0x811c9dc5>>>0; for (let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0;} return h.toString(36); }
+function hashFNV1a(str = "") { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; } return h.toString(36); }
 const sig3 = (dateISO, text, user) => hashFNV1a(`${dateISO}#${norm(text)}#${norm(user)}`);
 const appPk = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
 const isWithin = (dateISO, fromISO, toISO) => {
@@ -245,10 +272,18 @@ exports.handler = async (event) => {
     catch { console.error("SQS message invalide:", rec.body); continue; }
 
     const { appName, platform, bundleId, backfillDays } = msg || {};
-    if (!appName || !platform || !bundleId) { console.error("Message incomplet:", msg); continue; }
+    if (!platform || !bundleId) { console.error("Message incomplet (platform/bundleId requis):", msg); continue; }
 
+    // Résolution robuste du nom d'app si manquant
+    let resolvedName = appName;
+    if (!resolvedName) {
+      resolvedName = await getAppNameFromMetadata(platform, bundleId);
+      if (!resolvedName) {
+        resolvedName = bundleId;
+      }
+    }
     try {
-      const stats = await runIncremental({ appName, platform, bundleId, backfillDays, gplay, store });
+      const stats = await runIncremental({ appName: resolvedName, platform, bundleId, backfillDays, gplay, store });
       console.log("[INC] Résultat:", stats);
       await bumpAppReviewCounter({ platform, bundleId, inserted: stats.inserted });
     } catch (e) {
