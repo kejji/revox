@@ -338,7 +338,7 @@ export async function getFollowedApps(req, res) {
     }));
     const totals = new Map((bg.Responses?.[APPS_METADATA_TABLE] || []).map(i => [i.app_pk, i["total_reviews"] || 0]));
 
-    // ⬇️ Enrichissement: si meta manquante/incomplète, on relit le store (lazy refresh)
+    // Enrichissement: si meta manquante/incomplète, on relit le store (lazy refresh)
     const enriched = await Promise.all(follows.map(async (it) => {
       const appKey = it.app_pk;
       const [platform, bundleId] = appKey.split("#", 2);
@@ -349,6 +349,22 @@ export async function getFollowedApps(req, res) {
       const lastSeenAt = seenMap.get(appKey)?.last_seen_at ?? null;
       const effectiveSeen = (rawSeen === -1) ? total : rawSeen;
       const badge = Math.max(0, total - effectiveSeen);
+
+      // Read-repair: si on a une sentinelle -1 et qu'il y a maintenant des reviews,
+      // on corrige en base de façon idempotente (sans changer last_seen_at).
+      if (rawSeen === -1 && total > 0) {
+        try {
+          await ddb.send(new UpdateCommand({
+            TableName: USER_FOLLOWS_TABLE,
+            Key: { user_id: userId, app_pk: appKey },
+            UpdateExpression: "SET last_seen_total = :seen",
+            ConditionExpression: "attribute_exists(user_id) AND attribute_exists(app_pk) AND last_seen_total = :minusOne",
+            ExpressionAttributeValues: { ":seen": total, ":minusOne": -1 }
+          }));
+        } catch (e) {
+          // ignore si condition échoue (déjà corrigé ailleurs)
+        }
+      }
 
       return {
         bundleId,
