@@ -21,8 +21,7 @@ const DEFAULT_INTERVAL_MIN = Number.isFinite(parseInt(process.env.DEFAULT_INGEST
   ? parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10)
   : 60; // fallback 60 min
 
-const QUEUE_URL = process.env.EXTRACTION_QUEUE_URL; // <-- fix: déclaration propre
-const BADGE_GRACE_MINUTES = 5 // on force bages_count à zéro les 5 premières minutes tant qu'il n'y a aucun reviews (utile pour la première ingestion)
+const QUEUE_URL = process.env.EXTRACTION_QUEUE_URL;
 const sqs = new SQSClient({ region: REGION });
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
@@ -323,8 +322,7 @@ export async function getFollowedApps(req, res) {
     // Map (app_pk -> last_seen_total/at) pour calcul badge
     const seenMap = new Map(follows.map(it => [it.app_pk, {
       last_seen_total: Number.isFinite(it.last_seen_total) ? it.last_seen_total : 0,
-      last_seen_at: it.last_seen_at || null,
-      suppress_badge_until: it.suppress_badge_until || null
+      last_seen_at: it.last_seen_at || null
     }]));
 
     // BatchGet des total_reviews (chunker si >100 au besoin)
@@ -349,11 +347,7 @@ export async function getFollowedApps(req, res) {
       const total = totals.get(appKey) ?? 0;
       const rawSeen = seenMap.get(appKey)?.last_seen_total ?? 0;
       const lastSeenAt = seenMap.get(appKey)?.last_seen_at ?? null;
-      const suppressIso = seenMap.get(appKey)?.suppress_badge_until || null;
-      const graceActive = suppressIso && Date.now() < Date.parse(suppressIso);
-      // Pendant la grâce : on “promote” la valeur retournée au front,
-      // sans toucher à la BDD (évite badge fantôme et seen=0 visuellement).
-      const effectiveSeen = graceActive ? Math.max(rawSeen, total) : rawSeen;
+      const effectiveSeen = (rawSeen === -1) ? total : rawSeen;
       const badge = Math.max(0, total - effectiveSeen);
 
       return {
@@ -398,29 +392,25 @@ export async function markFollowRead(req, res) {
       ExpressionAttributeNames: { "#c": "total_reviews" }
     }));
     const total = Number.isFinite(meta.Item?.["total_reviews"]) ? meta.Item.total_reviews : 0;
-    const nowMs = Date.now();
-    const nowIso = new Date(nowMs).toISOString();
+    const nowIso = new Date().toISOString();
 
-    // Si total == 0 -> on pose une fenêtre de grâce qui neutralise les badges
-    if (total === 0) {
-      const suppressUntilIso = new Date(nowMs + BADGE_GRACE_MINUTES * 60 * 1000).toISOString();
-      await ddb.send(new UpdateCommand({
-        TableName: USER_FOLLOWS_TABLE,
-        Key: { user_id: userId, app_pk: pk },
-        UpdateExpression: "SET last_seen_total = :seen, last_seen_at = :at, suppress_badge_until = :suppress",
-        ConditionExpression: "attribute_exists(user_id) AND attribute_exists(app_pk)",
-        ExpressionAttributeValues: { ":seen": 0, ":at": nowIso, ":suppress": suppressUntilIso }
-      }));
-    } else {
-      // total > 0 : on mark-read normalement ET on supprime toute ancienne fenêtre de grâce
-      await ddb.send(new UpdateCommand({
-        TableName: USER_FOLLOWS_TABLE,
-        Key: { user_id: userId, app_pk: pk },
-        UpdateExpression: "SET last_seen_total = :seen, last_seen_at = :at REMOVE suppress_badge_until",
-        ConditionExpression: "attribute_exists(user_id) AND attribute_exists(app_pk)",
-        ExpressionAttributeValues: { ":seen": total, ":at": nowIso }
-      }));
-    }
+    const updateWhenZero = new UpdateCommand({
+      TableName: USER_FOLLOWS_TABLE,
+      Key: { user_id: userId, app_pk: pk },
+      UpdateExpression: "SET last_seen_total = :seen, last_seen_at = :at",
+      ConditionExpression: "attribute_exists(user_id) AND attribute_exists(app_pk)",
+      ExpressionAttributeValues: { ":seen": -1, ":at": nowIso }
+    });
+
+    const updateWhenPositive = new UpdateCommand({
+      TableName: USER_FOLLOWS_TABLE,
+      Key: { user_id: userId, app_pk: pk },
+      UpdateExpression: "SET last_seen_total = :seen, last_seen_at = :at REMOVE suppress_badge_until",
+      ConditionExpression: "attribute_exists(user_id) AND attribute_exists(app_pk)",
+      ExpressionAttributeValues: { ":seen": total, ":at": nowIso }
+    });
+
+    await ddb.send(total === 0 ? updateWhenZero : updateWhenPositive);
 
     return res.status(200).json({
       ok: true,
