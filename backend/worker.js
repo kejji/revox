@@ -9,16 +9,14 @@
 
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
-const { fetchReviewsRange, fetchReviewsLatest } = require("./reviewsThemes");
-const { analyzeThemesWithOpenAI } = require("./openaiThemes");
 
 // ---------- Config ----------
-const REGION = process.env.AWS_REGION;
+const REGION = process.env.AWS_REGION || "eu-west-3";
 const REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 const FIRST_RUN_DAYS = 150;
 const MAX_BACKFILL_DAYS = 30;
 const METADATA_TABLE = process.env.APPS_METADATA_TABLE;
-const THEMES_TABLE = process.env.APPS_THEMES_TABLE;
+
 // ---------- Clients ----------
 const ddbDoc = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
@@ -43,8 +41,6 @@ async function bumpAppReviewCounter({ platform, bundleId, inserted }) {
     console.error("[COUNTER] update error:", e?.message || e);
   }
 }
-
-function todayYMD() { return new Date().toISOString().slice(0, 10); }
 
 // ---------- Compteurs : self-heal si pré-remplissage ----------
 async function countAllReviewsByPk(app_pk) {
@@ -315,54 +311,6 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
   return { fetched: fetched.length, sent: toInsert.length, inserted: ok, ddbDups: dup, errors: ko };
 }
 
-// ---------- Analyse des thèmes ----------
-async function handleAnalyzeThemes({ app_pk, from, to, limit }) {
-  let reviews, selection = {};
-  if (from || to) {
-    const end = to ? new Date(to) : new Date();
-    const start = from ? new Date(from) : new Date(new Date(end).setUTCDate(end.getUTCDate() - 90));
-    const fromISO = start.toISOString();
-    const toISO = end.toISOString();
-    reviews = await fetchReviewsRange(app_pk, fromISO, toISO, 2000);
-    selection = { from: fromISO, to: toISO };
-  } else if (limit) {
-    reviews = await fetchReviewsLatest(app_pk, Number(limit));
-    selection = { limit: Number(limit) };
-  } else {
-    const end = new Date();
-    const start = new Date(new Date().setUTCDate(end.getUTCDate() - 90));
-    const fromISO = start.toISOString();
-    const toISO = end.toISOString();
-    reviews = await fetchReviewsRange(app_pk, fromISO, toISO, 2000);
-    selection = { from: fromISO, to: toISO };
-  }
-
-  const result = await analyzeThemesWithOpenAI({
-    appPks: [app_pk],
-    from: selection.from,
-    to: selection.to,
-    lang: "fr",
-    posCutoff: 4,
-    negCutoff: 3,
-    topN: 3
-  }, reviews);
-
-  await ddbDoc.send(new PutCommand({
-    TableName: THEMES_TABLE,
-    Item: {
-      app_pk,
-      sk: `theme#${todayYMD()}`,
-      selection,
-      total_reviews_considered: reviews.length,
-      result,
-      created_at: new Date().toISOString()
-    },
-    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(sk)"
-  }));
-
-  console.log(`[ANALYZE_THEMES] done for ${app_pk} reviews=${reviews.length}`);
-}
-
 // ---------- Handler ----------
 exports.handler = async (event) => {
   const { default: gplay } = await import("google-play-scraper");
@@ -373,14 +321,6 @@ exports.handler = async (event) => {
     try { msg = JSON.parse(rec.body || "{}"); }
     catch { console.error("SQS message invalide:", rec.body); continue; }
 
-    if (msg.mode === "ANALYZE_THEMES") {
-      try {
-        await handleAnalyzeThemes(msg);
-      } catch (e) {
-        console.error("[ANALYZE_THEMES] error:", e?.message || e);
-      }
-      continue;
-    }
     const { appName, platform, bundleId, backfillDays } = msg || {};
     if (!platform || !bundleId) { console.error("Message incomplet (platform/bundleId requis):", msg); continue; }
 
