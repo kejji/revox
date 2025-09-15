@@ -9,8 +9,6 @@
 
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
-const { fetchReviewsRange, fetchReviewsLatest } = require("./reviewsThemes");
-const { analyzeThemesWithOpenAI } = require("./openaiThemes");
 
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION;
@@ -317,10 +315,13 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
 
 // ---------- Analyse des thèmes ----------
 async function handleAnalyzeThemes({ app_pk, from, to, limit }) {
+  // Import ESM au moment de l’appel (interop simple & sûr)
+  const { fetchReviewsRange, fetchReviewsLatest } = await import("./reviewsThemes.js");
+  const { analyzeThemesWithOpenAI } = await import("./openaiThemes.js");
+
   let reviews, selection = {};
 
   if (from || to) {
-    // Mode "range"
     const end = to ? new Date(to) : new Date();
     const start = from ? new Date(from) : new Date(new Date(end).setUTCDate(end.getUTCDate() - 90));
     const fromISO = start.toISOString();
@@ -328,11 +329,10 @@ async function handleAnalyzeThemes({ app_pk, from, to, limit }) {
     reviews = await fetchReviewsRange(app_pk, fromISO, toISO, 2000);
     selection = { from: fromISO, to: toISO };
   } else if (limit) {
-    // Mode "limit"
+    // appeler bien fetchReviewsLatest (sans "2")
     reviews = await fetchReviewsLatest(app_pk, Number(limit));
     selection = { limit: Number(limit) };
   } else {
-    // Défaut = 90 jours
     const end = new Date();
     const start = new Date(new Date().setUTCDate(end.getUTCDate() - 90));
     const fromISO = start.toISOString();
