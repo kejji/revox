@@ -69,4 +69,6 @@ jobs:
           aws lambda update-function-code --function-name revox-worker           --zip-file fileb://revox-backend.zip --region eu-west-3
           aws lambda update-function-code --function-name revox-user-sync        --zip-file fileb://revox-backend.zip --region eu-west-3
           aws lambda update-function-code --function-name revox-ingest-scheduler --zip-file fileb://revox-backend.zip --region eu-west-3
+          aws lambda update-function-code --function-name revox-themes-worker    --zip-file fileb://revox-backend.zip --region eu-west-3
+
         working-directory: .
