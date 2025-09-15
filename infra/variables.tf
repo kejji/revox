@@ -12,7 +12,7 @@ variable "aws_profile" {
 
 variable "default_ingest_interval_minutes" {
   type    = number
-  default = 30
+  default = 3
 }
 
 variable "sched_batch_size" {
@@ -27,7 +27,7 @@ variable "sched_lock_ms" {
 
 variable "ingest_scheduler_rate_expression" {
   type    = string
-  default = "rate(5 minutes)"
+  default = "rate(2 minutes)"
 }
 
 variable "openai_secret_name" {

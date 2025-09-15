@@ -8,7 +8,7 @@
 // -------------------------------------------------------------------
 
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
 
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION || "eu-west-3";
@@ -39,6 +39,56 @@ async function bumpAppReviewCounter({ platform, bundleId, inserted }) {
     console.log(`[COUNTER] ${pk} += ${inserted}`);
   } catch (e) {
     console.error("[COUNTER] update error:", e?.message || e);
+  }
+}
+
+// ---------- Compteurs : self-heal si pré-remplissage ----------
+async function countAllReviewsByPk(app_pk) {
+  let count = 0, lastKey;
+  do {
+    const q = await ddbDoc.send(new QueryCommand({
+      TableName: REVIEWS_TABLE,
+      KeyConditionExpression: "app_pk = :pk",
+      ExpressionAttributeValues: { ":pk": app_pk },
+      Select: "COUNT",
+      ExclusiveStartKey: lastKey
+    }));
+    count += q.Count || 0;
+    lastKey = q.LastEvaluatedKey;
+  } while (lastKey);
+  return count;
+}
+
+async function ensureTotalInitialized({ platform, bundleId, inserted }) {
+  const pk = appPk(platform, bundleId);
+  try {
+    // Si on a inséré quelque chose, l'ADD du compteur suffit.
+    if (inserted > 0) return;
+    // Vérifie l'état courant du compteur
+    const meta = await ddbDoc.send(new GetCommand({
+      TableName: METADATA_TABLE,
+      Key: { app_pk: pk },
+      ProjectionExpression: "total_reviews"
+    }));
+    const current = meta.Item?.total_reviews;
+    if (Number.isFinite(current) && current > 0) return; // déjà initialisé
+    // Compte réel en base (peut paginer si >1 Mo)
+    const accurate = await countAllReviewsByPk(pk);
+    // Écrit une seule fois si 0/absent (idempotent)
+    await ddbDoc.send(new UpdateCommand({
+      TableName: METADATA_TABLE,
+      Key: { app_pk: pk },
+      UpdateExpression: "SET total_reviews = :n, last_ingest_at = :now",
+      ConditionExpression: "attribute_not_exists(total_reviews) OR total_reviews = :zero",
+      ExpressionAttributeValues: {
+        ":n": accurate,
+        ":now": new Date().toISOString(),
+        ":zero": 0
+      }
+    }));
+    console.log(`[COUNTER_INIT] ${pk} total_reviews set to ${accurate}`);
+  } catch (e) {
+    console.warn("[COUNTER_INIT] skipped:", e?.message || e);
   }
 }
 
@@ -286,6 +336,7 @@ exports.handler = async (event) => {
       const stats = await runIncremental({ appName: resolvedName, platform, bundleId, backfillDays, gplay, store });
       console.log("[INC] Résultat:", stats);
       await bumpAppReviewCounter({ platform, bundleId, inserted: stats.inserted });
+      await ensureTotalInitialized({ platform, bundleId, inserted: stats.inserted });
     } catch (e) {
       console.error("Erreur worker:", e?.message || e);
     }
