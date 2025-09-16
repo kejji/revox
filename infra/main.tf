@@ -413,7 +413,7 @@ resource "aws_lambda_function" "api" {
       OPENAI_MODEL                    = var.openai_model
       OPENAI_URL                      = var.openai_url
       APPS_THEMES_TABLE               = aws_dynamodb_table.apps_themes.name
-
+      THEMES_QUEUE_URL                = aws_sqs_queue.themes_queue.url
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)

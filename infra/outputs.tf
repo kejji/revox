@@ -49,3 +49,13 @@ output "apps_ingest_schedule_table_name" {
 output "apps_themes_table_name" {
   value = trimspace(aws_dynamodb_table.apps_themes.name)
 }
+
+output "themes_queue_url" {
+  description = "URL de la queue SQS pour l'analyse des themes"
+  value       = trimspace(aws_sqs_queue.themes_queue.url)
+}
+
+output "themes_queue_arn" {
+  description = "ARN de la queue SQS pour l'analyse des themes"
+  value       = trimspace(aws_sqs_queue.themes_queue.arn)
+}

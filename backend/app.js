@@ -11,6 +11,7 @@ import { followApp, unfollowApp, getFollowedApps, markFollowRead } from "./follo
 import { upsertSchedule, getSchedule, listSchedules } from "./schedule.js";
 import { mergeApps, unmergeApps } from "./appsMerge.js";
 import { getReviewsThemes } from "./reviewsThemes.js";
+import { enqueueThemes } from "./themesEnqueue.js";
 
 const app = express();
 
@@ -122,6 +123,11 @@ app.get("/reviews/themes", (req, res) => {
 app.put("/follow-app/mark-read", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   markFollowRead(req, res);
+});
+
+app.post("/themes/enqueue", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  enqueueThemes(req, res);
 });
 
 export default app;

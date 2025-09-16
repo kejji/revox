@@ -16,6 +16,7 @@ REVOX_USERS_TABLE=$(terraform output -raw revox_users_table_name)
 APPS_METADATA_TABLE=$(terraform output -raw apps_metadata_table_name)
 APPS_INGEST_SCHEDULE_TABLE=$(terraform output -raw apps_ingest_schedule_table_name)
 APPS_THEMES_TABLE=$(terraform output -raw apps_themes_table_name)
+THEMES_QUEUE_URL=$(terraform output -raw themes_queue_url)
 EOF
 
 echo "✓ .env backend generated in ../backend/.env"
