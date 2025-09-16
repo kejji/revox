@@ -4,7 +4,22 @@ import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 const sqs = new SQSClient({ region: process.env.AWS_REGION });
 const THEMES_QUEUE_URL = process.env.THEMES_QUEUE_URL;
 
-// ... tes helpers toAppPk / normalizeAppPkList restent inchangés ...
+// helpers — multi-app support
+function normalizeAppPkList(app_pk_raw) {
+  const parts = String(app_pk_raw || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+  const uniq = Array.from(new Set(parts));
+  uniq.sort(); // ordre stable pour les clés/idempotence
+  return uniq.join(",");
+}
+
+function toAppPk({ app_pk, platform, bundleId }) {
+  if (app_pk) return normalizeAppPkList(app_pk);
+  if (platform && bundleId) return `${String(platform).toLowerCase()}#${bundleId}`;
+  return null;
+}
 
 export async function enqueueThemes(req, res) {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
