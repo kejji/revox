@@ -10,8 +10,31 @@ const ddbDoc = DynamoDBDocumentClient.from(
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
-const { fetchReviewsRange, fetchReviewsLatest } = require("./reviewsThemes");
-const { analyzeThemesWithOpenAI } = require("./openaiThemes");
+const reviewsMod = require("./reviewsThemes");
+const openaiMod  = require("./openaiThemes");
+
+// Log de diagnostic pour voir ce que Node charge vraiment
+try {
+  console.log("[THEMES] reviewsThemes exports keys:", Object.keys(reviewsMod));
+  if (reviewsMod.default) console.log("[THEMES] reviewsThemes.default keys:", Object.keys(reviewsMod.default));
+  console.log("[THEMES] openaiThemes exports keys:", Object.keys(openaiMod));
+  if (openaiMod.default) console.log("[THEMES] openaiThemes.default keys:", Object.keys(openaiMod.default));
+} catch (_) {}
+
+// Résolution robuste (CJS, ESM, alias éventuels)
+const fetchReviewsRange =
+  reviewsMod.fetchReviewsRange ||
+  reviewsMod.default?.fetchReviewsRange;
+
+const fetchReviewsLatest =
+  reviewsMod.fetchReviewsLatest ||
+  reviewsMod.fetchReviewsLatest2 ||                 // compat ancien symbole
+  reviewsMod.default?.fetchReviewsLatest ||
+  reviewsMod.default?.fetchReviewsLatest2;          // compat si exporté sous default
+
+const analyzeThemesWithOpenAI =
+  openaiMod.analyzeThemesWithOpenAI ||
+  openaiMod.default?.analyzeThemesWithOpenAI;
 
 function todayYMD() { return new Date().toISOString().slice(0,10); }
 
