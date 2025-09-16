@@ -529,7 +529,7 @@ resource "aws_lambda_function" "themes_worker" {
       OPENAI_URL              = var.openai_url
       OPENAI_MODEL            = var.openai_model
       OPENAI_SECRET_NAME      = var.openai_secret_name
-      THEMES_QUEUE_URL             = aws_sqs_queue.themes_queue.url
+      THEMES_QUEUE_URL        = aws_sqs_queue.themes_queue.url
     }
   }
 

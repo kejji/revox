@@ -4,30 +4,19 @@ import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 const sqs = new SQSClient({ region: process.env.AWS_REGION });
 const THEMES_QUEUE_URL = process.env.THEMES_QUEUE_URL;
 
-function normalizeAppPkList(app_pk_raw) {
-  const parts = String(app_pk_raw || "")
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean);
-  // dédupe + ordre stable
-  const uniq = Array.from(new Set(parts));
-  uniq.sort(); // ordre lexicographique pour la clé
-  return uniq.join(",");
-}
+// ... tes helpers toAppPk / normalizeAppPkList restent inchangés ...
 
-function toAppPk({ app_pk, platform, bundleId }) {
-  if (app_pk) return normalizeAppPkList(app_pk);
-  if (platform && bundleId) return `${String(platform).toLowerCase()}#${bundleId}`;
-  return null;
-}
-
-// Contrôleur Express
 export async function enqueueThemes(req, res) {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+
+  // ✅ log de debug: queue + région (temporaire)
+  console.log("[enqueue] REGION =", process.env.AWS_REGION);
+  console.log("[enqueue] THEMES_QUEUE_URL =", THEMES_QUEUE_URL);
 
   if (!THEMES_QUEUE_URL) {
     return res.status(500).json({ error: "THEMES_QUEUE_URL not configured" });
   }
+  const isFifo = THEMES_QUEUE_URL.endsWith(".fifo");
 
   const { app_pk, platform, bundleId, from, to, limit } = req.body || {};
   const pk = toAppPk({ app_pk, platform, bundleId });
@@ -37,7 +26,7 @@ export async function enqueueThemes(req, res) {
 
   const msg = { app_pk: pk };
   if (from) msg.from = new Date(from).toISOString();
-  if (to) msg.to = new Date(to).toISOString();
+  if (to)   msg.to   = new Date(to).toISOString();
   if (limit != null) {
     const n = Math.max(1, Math.min(2000, Number(limit)));
     if (!Number.isFinite(n)) return res.status(400).json({ error: "limit must be a number" });
@@ -45,18 +34,29 @@ export async function enqueueThemes(req, res) {
   }
 
   try {
-    console.log("[enqueue] THEMES_QUEUE_URL =", THEMES_QUEUE_URL);
-    await sqs.send(new SendMessageCommand({
+    const params = {
       QueueUrl: THEMES_QUEUE_URL,
       MessageBody: JSON.stringify(msg),
-      // si ta queue est FIFO : décommente
-      // MessageGroupId: pk,
-      // MessageDeduplicationId: `themes#${pk}#${Date.now()}`
-    }));
+    };
+    // ✅ requis si queue FIFO
+    if (isFifo) {
+      params.MessageGroupId = pk; // ou "themes"
+      params.MessageDeduplicationId = `themes#${pk}#${Date.now()}`;
+    }
+
+    console.log("[enqueue] send params (short) =", {
+      QueueUrl: params.QueueUrl,
+      hasGroup: !!params.MessageGroupId,
+      hasDedup: !!params.MessageDeduplicationId,
+    });
+
+    const resp = await sqs.send(new SendMessageCommand(params));
     console.log("[enqueue] MessageId =", resp?.MessageId);
-    return res.status(202).json({ ok: true, queued: msg });
+
+    return res.status(202).json({ ok: true, queued: msg, messageId: resp?.MessageId });
   } catch (e) {
-    console.error("[/themes/enqueue] error:", e?.message || e);
-    return res.status(500).json({ error: "enqueue_failed" });
+    // ✅ loger l’erreur exacte pour diagnostiquer
+    console.error("[/themes/enqueue] SendMessage error:", e?.name, e?.message);
+    return res.status(500).json({ error: "enqueue_failed", reason: e?.message || "unknown" });
   }
 }
