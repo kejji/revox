@@ -64,8 +64,7 @@ async function fetchReviewsLatest(appPk, count) {
   }));
 }
 
-export const fetchReviewsLatest2 = fetchReviewsLatest; // alias compat
-export default { fetchReviewsRange, fetchReviewsLatest, fetchReviewsLatest2 };
+export default { fetchReviewsRange, fetchReviewsLatest };
 
 export async function getReviewsThemes(req, res) {
   try {
