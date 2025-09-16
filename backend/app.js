@@ -12,6 +12,7 @@ import { upsertSchedule, getSchedule, listSchedules } from "./schedule.js";
 import { mergeApps, unmergeApps } from "./appsMerge.js";
 import { getReviewsThemes } from "./reviewsThemes.js";
 import { enqueueThemes } from "./themesEnqueue.js";
+import { getLatestThemes } from "./themesLatest.js";
 
 const app = express();
 
@@ -128,6 +129,11 @@ app.put("/follow-app/mark-read", (req, res) => {
 app.post("/themes/enqueue", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   enqueueThemes(req, res);
+});
+
+app.get("/themes/latest", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getLatestThemes(req, res);
 });
 
 export default app;
