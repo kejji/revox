@@ -42,6 +42,7 @@ async function fetchReviewsRange(appPk, fromISO, toISO, limit = 1500) {
   }));
 }
 
+
 /**
  * Query des N derniers avis (sans borne temporelle)
  * -> nécessite que ts_review soit triable par date (ex: "YYYY-MM-DD...#...").
@@ -62,6 +63,9 @@ async function fetchReviewsLatest(appPk, count) {
     text: truncate(it.text || "", 3000),
   }));
 }
+
+export const fetchReviewsLatest2 = fetchReviewsLatest; // alias compat
+export default { fetchReviewsRange, fetchReviewsLatest, fetchReviewsLatest2 };
 
 export async function getReviewsThemes(req, res) {
   try {
