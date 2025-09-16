@@ -45,6 +45,7 @@ export async function enqueueThemes(req, res) {
   }
 
   try {
+    console.log("[enqueue] THEMES_QUEUE_URL =", THEMES_QUEUE_URL);
     await sqs.send(new SendMessageCommand({
       QueueUrl: THEMES_QUEUE_URL,
       MessageBody: JSON.stringify(msg),
@@ -52,7 +53,7 @@ export async function enqueueThemes(req, res) {
       // MessageGroupId: pk,
       // MessageDeduplicationId: `themes#${pk}#${Date.now()}`
     }));
-
+    console.log("[enqueue] MessageId =", resp?.MessageId);
     return res.status(202).json({ ok: true, queued: msg });
   } catch (e) {
     console.error("[/themes/enqueue] error:", e?.message || e);
