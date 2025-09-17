@@ -4,7 +4,6 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
-  UpdateCommand,
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
 
@@ -45,12 +44,12 @@ function resolveAppPkFromQuery(qs) {
 }
 function withIsoDates(item) {
   if (!item) return item;
+  const tsToIso = (ts) => (Number.isFinite(+ts) && +ts > 0 ? new Date(+ts).toISOString() : null);
   return {
     ...item,
-    last_enqueued_at_iso: item.last_enqueued_at
-      ? new Date(item.last_enqueued_at).toISOString()
-      : null,
-    next_run_at_iso: item.next_run_at ? new Date(item.next_run_at).toISOString() : null,
+    // Convertit si non présent en base (compat future)
+    last_enqueued_at_iso: item.last_enqueued_at_iso ?? tsToIso(item.last_enqueued_at),
+    next_run_at_iso: item.next_run_at_iso ?? tsToIso(item.next_run_at),
   };
 }
 
@@ -71,72 +70,32 @@ export async function upsertThemesSchedule(req, res) {
 
     // appName devient libre: pour un duo on peut mettre "Fortuneo (iOS+Android)" par ex.
     const appName = body.appName ?? null;
-    const wantedInterval = Number.isFinite(+body.interval_minutes)
-      ? +body.interval_minutes
-      : undefined;
-    const wantedEnabled =
-      typeof body.enabled === "boolean" ? body.enabled : undefined;
-
-    const current = await ddb.send(
-      new GetCommand({ TableName: TABLE, Key: { app_pk } })
-    );
+    const interval = Number.isFinite(+body.interval_minutes) ? +body.interval_minutes : DEFAULT_INTERVAL;
+    const isEnabled = typeof body.enabled === "boolean" ? body.enabled : true;
 
     const now = Date.now();
-    const interval =
-      wantedInterval ?? current.Item?.interval_minutes ?? DEFAULT_INTERVAL;
-    const isEnabled =
-      wantedEnabled ?? (current.Item?.enabled ?? true);
+    // Écriture simple : on stocke timestamp ET ISO
+    const item = {
+      app_pk,
+      due_pk: "DUE",
+      appName,
+      interval_minutes: interval,
+      enabled: isEnabled,
+      last_enqueued_at: 0,
+      next_run_at: now,
+      // nouveaux champs stockés en base
+      last_enqueued_at_iso: null,
+      next_run_at_iso: new Date(now).toISOString(),
+    };
 
-    if (!current.Item) {
-      const item = {
-        app_pk,
-        due_pk: "DUE",
-        appName,
-        interval_minutes: interval,
-        enabled: isEnabled,
-        next_run_at: now,
-        last_enqueued_at: 0,
-      };
-      await ddb.send(
-        new PutCommand({
-          TableName: TABLE,
-          Item: item,
-          ConditionExpression: "attribute_not_exists(app_pk)",
-        })
-      );
-      return res.status(201).json({ ok: true, schedule: withIsoDates(item), created: true });
-    }
-
-    const expr = [];
-    const values = {};
-    if (appName !== null && current.Item.appName !== appName) {
-      expr.push("appName = :appName");
-      values[":appName"] = appName;
-    }
-    if (current.Item.interval_minutes !== interval) {
-      expr.push("interval_minutes = :interval");
-      values[":interval"] = interval;
-    }
-    if (current.Item.enabled !== isEnabled) {
-      expr.push("enabled = :enabled");
-      values[":enabled"] = isEnabled;
-    }
-
-    if (expr.length === 0) {
-      return res.json({ ok: true, schedule: withIsoDates(current.Item), updated: false });
-    }
-
-    const update = await ddb.send(
-      new UpdateCommand({
+    await ddb.send(
+      new PutCommand({
         TableName: TABLE,
-        Key: { app_pk },
-        UpdateExpression: "SET " + expr.join(", "),
-        ExpressionAttributeValues: values,
-        ReturnValues: "ALL_NEW",
+        Item: item,
       })
     );
 
-    return res.json({ ok: true, schedule: withIsoDates(update.Attributes), updated: true });
+    return res.status(201).json({ ok: true, schedule: withIsoDates(item), created: true });
   } catch (e) {
     console.error("upsertThemesSchedule error", e);
     return res.status(500).json({ error: "internal_error", details: String(e?.message || e) });
