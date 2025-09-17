@@ -11,7 +11,6 @@ import { followApp, unfollowApp, getFollowedApps, markFollowRead } from "./follo
 import { upsertSchedule, getSchedule, listSchedules } from "./schedule.js";
 import { mergeApps, unmergeApps } from "./appsMerge.js";
 import { enqueueThemes } from "./themesEnqueue.js";
-import { getLatestThemes } from "./themesLatest.js";
 import { getThemesStatus } from "./themesStatus.js";
 import { getThemesResult } from "./themesResult.js";
 
@@ -125,11 +124,6 @@ app.put("/follow-app/mark-read", (req, res) => {
 app.post("/themes/enqueue", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   enqueueThemes(req, res);
-});
-
-app.get("/themes/latest", (req, res) => {
-  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
-  getLatestThemes(req, res);
 });
 
 app.get("/themes/status", (req, res) => {
