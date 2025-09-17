@@ -10,9 +10,10 @@ import { dispatchIncrementalIngest } from "./ingest.js";
 import { followApp, unfollowApp, getFollowedApps, markFollowRead } from "./followApp.js";
 import { upsertSchedule, getSchedule, listSchedules } from "./schedule.js";
 import { mergeApps, unmergeApps } from "./appsMerge.js";
-import { getReviewsThemes } from "./reviewsThemes.js";
 import { enqueueThemes } from "./themesEnqueue.js";
 import { getLatestThemes } from "./themesLatest.js";
+import { getThemesStatus } from "./themesStatus.js";
+import { getThemesResult } from "./themesResult.js";
 
 const app = express();
 
@@ -116,11 +117,6 @@ app.delete("/apps/merge", (req, res) => {
   unmergeApps(req, res);
 });
 
-app.get("/reviews/themes", (req, res) => {
-  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
-  getReviewsThemes(req, res);
-});
-
 app.put("/follow-app/mark-read", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   markFollowRead(req, res);
@@ -134,6 +130,16 @@ app.post("/themes/enqueue", (req, res) => {
 app.get("/themes/latest", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   getLatestThemes(req, res);
+});
+
+app.get("/themes/status", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getThemesStatus(req, res);
+});
+
+app.get("/themes/result", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getThemesResult(req, res);
 });
 
 export default app;

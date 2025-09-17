@@ -286,3 +286,18 @@ resource "aws_iam_user_policy" "terraform_user_read_openai_secret" {
     ]
   })
 }
+
+# Autoriser le user à voir les envs (kms:Decrypt sur la clé lambda_env)
+resource "aws_iam_user_policy" "terraform_user_kms_decrypt_lambda_env" {
+  name = "terraform-user-KMSDecrypt-LambdaEnv"
+  user = aws_iam_user.terraform_user.name
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect   = "Allow",
+      Action   = ["kms:Decrypt", "kms:DescribeKey"],
+      Resource = aws_kms_key.lambda_env.arn
+    }]
+  })
+}

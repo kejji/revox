@@ -1,6 +1,6 @@
 // backend/themesWorker.js
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBDocumentClient, PutCommand, DeleteCommand } = require("@aws-sdk/lib-dynamodb");
 
 const REGION = process.env.AWS_REGION;
 const THEMES_TABLE = process.env.APPS_THEMES_TABLE;
@@ -13,14 +13,6 @@ const ddbDoc = DynamoDBDocumentClient.from(
 const reviewsMod = require("./reviewsThemes");
 const openaiMod = require("./openaiThemes");
 
-// Log de diagnostic pour voir ce que Node charge vraiment
-try {
-  console.log("[THEMES] reviewsThemes exports keys:", Object.keys(reviewsMod));
-  if (reviewsMod.default) console.log("[THEMES] reviewsThemes.default keys:", Object.keys(reviewsMod.default));
-  console.log("[THEMES] openaiThemes exports keys:", Object.keys(openaiMod));
-  if (openaiMod.default) console.log("[THEMES] openaiThemes.default keys:", Object.keys(openaiMod.default));
-} catch (_) { }
-
 // Résolution robuste (CJS, ESM, alias éventuels)
 const fetchReviewsRange =
   reviewsMod.fetchReviewsRange ||
@@ -28,9 +20,7 @@ const fetchReviewsRange =
 
 const fetchReviewsLatest =
   reviewsMod.fetchReviewsLatest ||
-  reviewsMod.fetchReviewsLatest2 ||                 // compat ancien symbole
-  reviewsMod.default?.fetchReviewsLatest ||
-  reviewsMod.default?.fetchReviewsLatest2;          // compat si exporté sous default
+  reviewsMod.default?.fetchReviewsLatest;
 
 const analyzeThemesWithOpenAI =
   openaiMod.analyzeThemesWithOpenAI ||
@@ -43,13 +33,19 @@ function splitAppPks(app_pk) {
     .map(s => s.trim())
     .filter(Boolean);
 }
+function normalizePkList(raw) {
+  return String(raw || "")
+    .split(",").map(s => s.trim()).filter(Boolean)
+    .sort().join(",");
+}
 
-async function handleAnalyzeThemes({ app_pk, from, to, limit }) {
+async function handleAnalyzeThemes({ app_pk, from, to, limit, job_id, day }) {
   const appPks = splitAppPks(app_pk);
   if (appPks.length === 0) throw new Error("No app_pk provided");
 
   let reviews = [];
   let selection = {};
+  const curDay = day || todayYMD();
 
   if (from || to) {
     const end = to ? new Date(to) : new Date();
@@ -82,21 +78,33 @@ async function handleAnalyzeThemes({ app_pk, from, to, limit }) {
     reviews
   );
 
-  const pkStable = appPks.slice().sort().join(",");
+  const pkStable = normalizePkList(appPks.join(","));
+  const job = job_id || "nojob";
+
+  // Écrit le résultat versionné par job_id
   await ddbDoc.send(new PutCommand({
     TableName: THEMES_TABLE,
     Item: {
       app_pk: pkStable,
-      sk: `theme#${todayYMD()}`,
+      sk: `theme#${curDay}#${job}`,
       selection,
       total_reviews_considered: reviews.length,
       result,
       created_at: new Date().toISOString(),
+      job_id: job_id || null,
     },
     ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(sk)",
   }));
 
-  console.log(`[THEMES] done for ${pkStable} apps=${appPks.length} reviews=${reviews.length}`);
+  // Supprime le pending correspondant (best-effort)
+  try {
+    await ddbDoc.send(new DeleteCommand({
+      TableName: THEMES_TABLE,
+      Key: { app_pk: pkStable, sk: `pending#${curDay}#${job}` }
+    }));
+  } catch (_) {}
+
+  console.log(`[THEMES] done for ${pkStable} day=${curDay} job=${job} apps=${appPks.length} reviews=${reviews.length}`);
 }
 
 exports.handler = async (event) => {
@@ -113,9 +121,8 @@ exports.handler = async (event) => {
     try {
       await handleAnalyzeThemes(msg);
     } catch (e) {
-      // idempotence : si déjà présent pour aujourd’hui
       if (e?.name === "ConditionalCheckFailedException") {
-        console.log(`[THEMES] skip (already today) app_pk=${msg.app_pk}`);
+        console.log(`[THEMES] skip (already exists today) app_pk=${msg.app_pk}`);
         continue;
       }
       console.error("[THEMES] error:", e?.message || e);
