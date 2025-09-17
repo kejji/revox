@@ -141,6 +141,10 @@ export const handler = async () => {
     const day = todayYMD();
     const job_id = makeJobId(app_pk, day);
     try {
+      console.log(JSON.stringify({
+        msg: "themes.scheduler.env",
+        queueUrl: QUEUE,
+      }));
       const r = await sqs.send(
         new SendMessageCommand({
           QueueUrl: QUEUE,
