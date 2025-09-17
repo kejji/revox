@@ -255,6 +255,40 @@ resource "aws_dynamodb_table" "apps_themes" {
 }
 
 ########################################
+# Table DynamoDB : APPS_THEMES_SCHEDULE
+########################################
+
+resource "aws_dynamodb_table" "apps_themes_schedule" {
+  name         = "apps_themes_schedule"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "app_pk"
+
+  attribute { 
+    name = "app_pk"    
+    type = "S" 
+  }
+  
+  attribute { 
+    name = "due_pk"    
+    type = "S" 
+  }
+
+  attribute { 
+    name = "next_run_at" 
+    type = "N" 
+  }
+
+  global_secondary_index {
+    name               = "gsi_due"
+    hash_key           = "due_pk"
+    range_key          = "next_run_at"
+    projection_type    = "ALL"
+  }
+
+  tags = { Name = "Revox Themes Schedule" }
+}
+
+########################################
 # SQS : queue pour les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {
@@ -542,6 +576,31 @@ resource "aws_lambda_function" "themes_worker" {
 }
 
 ########################################
+#  Ressource gérant la lambda themes scheduler
+########################################
+resource "aws_lambda_function" "themes_scheduler" {
+  function_name    = "revox-themes-scheduler"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "themesScheduler.handler"
+  runtime          = "nodejs18.x"
+  timeout          = 60
+  filename         = "${path.module}/dummy.zip"
+  source_code_hash = filebase64sha256("${path.module}/dummy.zip")
+
+  environment {
+    variables = {
+      APPS_THEMES_SCHEDULE_TABLE   = aws_dynamodb_table.apps_themes_schedule.name
+      THEMES_QUEUE_URL             = aws_sqs_queue.themes_queue.url
+      THEMES_SCHED_BATCH_SIZE      = 25
+      THEMES_SCHED_LOCK_MS         = 60000
+      THEMES_DEFAULT_INTERVAL_MINUTES = 1440
+    }
+  }
+
+  lifecycle { ignore_changes = [ filename, source_code_hash ] }
+}
+
+########################################
 # CloudWatch Log Group pour les logs Lambda
 ########################################
 resource "aws_cloudwatch_log_group" "lambda_log_group" {
@@ -692,9 +751,31 @@ resource "aws_lambda_permission" "allow_events_to_invoke_ingest_scheduler" {
 }
 
 ########################################
+# EventBride Themes Scheduler
+########################################
+resource "aws_cloudwatch_event_rule" "themes_daily" {
+  name                = "revox-themes-daily"
+  description         = "Planifie l’enqueue des analyses de thèmes (quotidien)"
+  schedule_expression = "cron(0 5 * * ? *)" # 05:00 UTC
+}
+
+resource "aws_cloudwatch_event_target" "themes_daily_target" {
+  rule      = aws_cloudwatch_event_rule.themes_daily.name
+  target_id = "revox-themes-scheduler-lambda"
+  arn       = aws_lambda_function.themes_scheduler.arn
+}
+
+resource "aws_lambda_permission" "allow_events_to_invoke_themes_scheduler" {
+  statement_id  = "AllowExecutionFromEventBridgeForThemesScheduler"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.themes_scheduler.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.themes_daily.arn
+}
+
+########################################
 # Secrets Manager pour OpenAI
 ########################################
-
 data "aws_secretsmanager_secret" "openai" {
   name = var.openai_secret_name
 }

@@ -13,6 +13,7 @@ import { mergeApps, unmergeApps } from "./appsMerge.js";
 import { enqueueThemes } from "./themesEnqueue.js";
 import { getThemesStatus } from "./themesStatus.js";
 import { getThemesResult } from "./themesResult.js";
+import { upsertThemesSchedule, getThemesSchedule, listThemesSchedules } from "./themesScheduleApi.js";
 
 const app = express();
 
@@ -134,6 +135,21 @@ app.get("/themes/status", (req, res) => {
 app.get("/themes/result", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   getThemesResult(req, res);
+});
+
+app.get("/themes/schedule", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getThemesSchedule(req, res);
+});
+
+app.put("/themes/schedule", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  upsertThemesSchedule(req, res);
+});
+
+app.get("/themes/schedule/list", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  listThemesSchedules(req, res);
 });
 
 export default app;

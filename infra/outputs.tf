@@ -79,3 +79,7 @@ output "openai_secret_arn" {
   value       = data.aws_secretsmanager_secret.openai.arn
   description = "ARN du secret OpenAI"
 }
+
+output "apps_themes_schedule_table_name" {
+  value = trimspace(aws_dynamodb_table.apps_themes_schedule.name)
+}
