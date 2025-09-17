@@ -47,3 +47,9 @@ variable "openai_url" {
   type        = string
   default     = "https://api.openai.com/v1/chat/completions"
 }
+
+variable "themes_default_interval_minutes" {
+  description = "Intervalle par défaut pour l’analyse des thèmes (minutes)."
+  type        = number
+  default     = 1440
+}

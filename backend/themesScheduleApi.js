@@ -6,17 +6,19 @@ import {
   PutCommand,
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 
-const ddb = DynamoDBDocumentClient.from(
-  new DynamoDBClient({ region: process.env.AWS_REGION }),
-  { marshallOptions: { removeUndefinedValues: true } }
-);
-
-const TABLE = process.env.APPS_THEMES_SCHEDULE_TABLE;
+const REGION = process.env.AWS_REGION;
+const TABLE  = process.env.APPS_THEMES_SCHEDULE_TABLE;
 const DEFAULT_INTERVAL = parseInt(
   process.env.THEMES_DEFAULT_INTERVAL_MINUTES || "1440",
   10
 ); // 1/jour
+
+const ddb = DynamoDBDocumentClient.from(
+  new DynamoDBClient({ region: REGION }),
+  { marshallOptions: { removeUndefinedValues: true } }
+);
 
 // --- helpers ---
 function normalizeAppPkList(app_pk_raw) {
@@ -31,9 +33,7 @@ function singleAppPk(platform, bundleId) {
   return `${String(platform).toLowerCase()}#${bundleId}`;
 }
 function resolveAppPkFromBody(body) {
-  // PRIORITÉ: si app_pk est fourni, on le normalise (gère multi-apps).
   if (body?.app_pk) return normalizeAppPkList(body.app_pk);
-  // fallback: (platform,bundleId)
   const one = singleAppPk(body?.platform, body?.bundleId);
   return one ? normalizeAppPkList(one) : null;
 }
@@ -47,7 +47,6 @@ function withIsoDates(item) {
   const tsToIso = (ts) => (Number.isFinite(+ts) && +ts > 0 ? new Date(+ts).toISOString() : null);
   return {
     ...item,
-    // Convertit si non présent en base (compat future)
     last_enqueued_at_iso: item.last_enqueued_at_iso ?? tsToIso(item.last_enqueued_at),
     next_run_at_iso: item.next_run_at_iso ?? tsToIso(item.next_run_at),
   };
@@ -68,13 +67,14 @@ export async function upsertThemesSchedule(req, res) {
         .json({ error: "Provide app_pk (comma-separated) OR platform & bundleId" });
     }
 
-    // appName devient libre: pour un duo on peut mettre "Fortuneo (iOS+Android)" par ex.
     const appName = body.appName ?? null;
     const interval = Number.isFinite(+body.interval_minutes) ? +body.interval_minutes : DEFAULT_INTERVAL;
     const isEnabled = typeof body.enabled === "boolean" ? body.enabled : true;
 
     const now = Date.now();
-    // Écriture simple : on stocke timestamp ET ISO
+    // ⬇️ Prochain run = demain (ou maintenant + interval)
+    const nextRunAt = now + interval * 60_000;
+
     const item = {
       app_pk,
       due_pk: "DUE",
@@ -82,20 +82,37 @@ export async function upsertThemesSchedule(req, res) {
       interval_minutes: interval,
       enabled: isEnabled,
       last_enqueued_at: 0,
-      next_run_at: now,
-      // nouveaux champs stockés en base
+      next_run_at: nextRunAt,
       last_enqueued_at_iso: null,
-      next_run_at_iso: new Date(now).toISOString(),
+      next_run_at_iso: new Date(nextRunAt).toISOString(),
     };
 
-    await ddb.send(
-      new PutCommand({
-        TableName: TABLE,
-        Item: item,
-      })
-    );
+    await ddb.send(new PutCommand({ TableName: TABLE, Item: item }));
 
-    return res.status(201).json({ ok: true, schedule: withIsoDates(item), created: true });
+    const resp = { ok: true, schedule: withIsoDates(item), created: true };
+
+    // ⬇️ RUN NOW (par défaut). Désactive avec ?run_now=false
+    const runNowFlag = (req.query.run_now ?? "true").toString().toLowerCase() !== "false";
+    if (runNowFlag) {
+      try {
+        const lambda = new LambdaClient({ region: REGION });
+        await lambda.send(
+          new InvokeCommand({
+            FunctionName: process.env.THEMES_SCHEDULER_FUNCTION_NAME, // "revox-themes-scheduler"
+            InvocationType: "Event", // async
+            Payload: Buffer.from(JSON.stringify({})),
+          })
+        );
+        resp.run_now = { ok: true };
+      } catch (e) {
+        console.error("[themes.schedule] run_now invoke error:", e?.message || e);
+        resp.run_now = { ok: false, error: "invoke_failed" };
+      }
+    } else {
+      resp.run_now = { ok: false, skipped: true };
+    }
+
+    return res.status(201).json(resp);
   } catch (e) {
     console.error("upsertThemesSchedule error", e);
     return res.status(500).json({ error: "internal_error", details: String(e?.message || e) });
@@ -115,9 +132,7 @@ export async function getThemesSchedule(req, res) {
         .json({ error: "Provide app_pk (comma-separated) OR platform & bundleId" });
     }
 
-    const out = await ddb.send(
-      new GetCommand({ TableName: TABLE, Key: { app_pk } })
-    );
+    const out = await ddb.send(new GetCommand({ TableName: TABLE, Key: { app_pk } }));
     if (!out.Item) return res.status(404).json({ error: "not_found" });
     return res.json({ ok: true, schedule: withIsoDates(out.Item) });
   } catch (e) {
@@ -138,21 +153,13 @@ export async function listThemesSchedules(req, res) {
       : undefined;
 
     const out = await ddb.send(
-      new ScanCommand({
-        TableName: TABLE,
-        Limit: limit,
-        ExclusiveStartKey: exclusiveStartKey,
-      })
+      new ScanCommand({ TableName: TABLE, Limit: limit, ExclusiveStartKey: exclusiveStartKey })
     );
 
     const nextCursor = out.LastEvaluatedKey
       ? Buffer.from(JSON.stringify(out.LastEvaluatedKey)).toString("base64")
       : null;
-    return res.json({
-      ok: true,
-      items: (out.Items || []).map(withIsoDates),
-      nextCursor,
-    });
+    return res.json({ ok: true, items: (out.Items || []).map(withIsoDates), nextCursor });
   } catch (e) {
     console.error("listThemesSchedules error", e);
     return res.status(500).json({ error: "internal_error", details: String(e?.message || e) });

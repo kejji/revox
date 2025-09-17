@@ -359,3 +359,19 @@ resource "aws_iam_user_policy" "terraform_user_invoke_revox_themes_inline" {
     }]
   })
 }
+
+resource "aws_iam_role_policy" "api_can_invoke_themes_scheduler" {
+  name = "api-can-invoke-themes-scheduler"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = ["lambda:InvokeFunction"],
+        Resource = aws_lambda_function.themes_scheduler.arn
+      }
+    ]
+  })
+}
