@@ -252,6 +252,27 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "cognito-idp:DescribeUserPoolClient"
         ],
         Resource = "*"
+      },
+
+      ### --- EVENT BRIDGE ---
+      {
+        Sid    = "EventBridgeReadRevoxThemesDaily",
+        Effect = "Allow",
+        Action = [
+          "events:PutRule",
+          "events:DescribeRule",
+          "events:ListTagsForResource",
+          "events:ListTargetsByRule"
+        ],
+        Resource = "arn:aws:events:eu-west-3:588738577999:rule/revox-themes-daily"
+      },
+      {
+        Sid    = "EventBridgeListRulesForDiscovery",
+        Effect = "Allow",
+        Action = [
+          "events:ListRules"
+        ],
+        Resource = "*"
       }
     ]
   })

@@ -730,7 +730,7 @@ resource "aws_kms_key_policy" "lambda_env_policy" {
 }
 
 ########################################
-# EventBride Ingest Scheduler
+# EventBridge Ingest Scheduler
 ########################################
 
 resource "aws_cloudwatch_event_rule" "revox_ingest_scheduler" {
@@ -754,7 +754,7 @@ resource "aws_lambda_permission" "allow_events_to_invoke_ingest_scheduler" {
 }
 
 ########################################
-# EventBride Themes Scheduler
+# EventBridge Themes Scheduler
 ########################################
 resource "aws_cloudwatch_event_rule" "themes_daily" {
   name                = "revox-themes-daily"
