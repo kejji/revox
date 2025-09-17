@@ -268,3 +268,21 @@ resource "aws_iam_user_policy_attachment" "terraform_user_dynamodb_ro" {
   user       = aws_iam_user.terraform_user.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess"
 }
+
+# Policy inline minimale: Secrets Manager GetSecretValue sur CE secret
+resource "aws_iam_user_policy" "terraform_user_read_openai_secret" {
+  name = "terraform-user-ReadOpenAISecret"
+  user = aws_iam_user.terraform_user.name
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        "Effect": "Allow",
+        "Action": [ "secretsmanager:GetSecretValue" ],
+        # l'ARN exact du secret, avec wildcard pour le suffixe généré par AWS
+        "Resource": "${data.aws_secretsmanager_secret.openai.arn}*"
+      }
+    ]
+  })
+}

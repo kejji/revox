@@ -8,7 +8,7 @@ let OPENAI_KEY   = process.env.OPENAI_API_KEY;
 
 async function ensureOpenAIKey() {
   if (OPENAI_KEY) return OPENAI_KEY;
-  const secretName = process.env.OPENAI_SECRET_NAME; // ex: "openai/api-key"
+  const secretName = process.env.OPENAI_SECRET_NAME;
   if (!secretName) throw new Error("OPENAI_SECRET_NAME is missing");
   const sm = new SecretsManagerClient({});
   const out = await sm.send(new GetSecretValueCommand({ SecretId: secretName }));

@@ -74,7 +74,15 @@ export async function getReviewsThemes(req, res) {
     const rawAppPk = req.query.app_pk;
     if (!rawAppPk) return res.status(400).json({ ok: false, error: "app_pk is required (comma-separated)" });
     const appPks = String(rawAppPk).split(",").map((s) => s.trim()).filter(Boolean);
-
+    // garde-fou: chaque app_pk doit contenir "<platform>#<bundleId>"
+    const bad = appPks.find(p => !p.includes("#"));
+    if (bad) {
+      return res.status(400).json({
+        ok: false,
+        error: "invalid_app_pk_format",
+        hint: 'Utilise "<platform>#<bundleId>", et sépare par des virgules pour multi-apps'
+      });
+    }
     const posCutoff = Math.max(0, Math.min(5, parseFloat(req.query.pos_cutoff || "4")));
     const negCutoff = Math.max(0, Math.min(5, parseFloat(req.query.neg_cutoff || "3")));
     const topN = Math.max(1, Math.min(5, parseInt(req.query.topn || "3", 10)));
@@ -113,10 +121,41 @@ export async function getReviewsThemes(req, res) {
     // Filtrer les textes vides
     reviews = reviews.filter((r) => (r.text || "").trim().length > 0);
 
-    const out = await analyzeThemesWithOpenAI(
-      { appPks, from: fromForParams, to: toForParams, lang: "fr", posCutoff, negCutoff, topN },
-      reviews
-    );
+    // cas "aucune review" → pas d'appel OpenAI, on renvoie un squelette propre
+    if (reviews.length === 0) {
+      return res.json({
+        ok: true,
+        params: {
+          app_pks: appPks,
+          from: fromForParams,
+          to: toForParams,
+          count: count || null,
+          total_reviews: 0,
+          pos_cutoff: 4,
+          neg_cutoff: 3,
+          model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        },
+        top_negative_axes: [],
+        top_positive_axes: [],
+        axes: []
+      });
+    }
+    let out;
+    try {
+      out = await analyzeThemesWithOpenAI(
+        { appPks, from: fromForParams, to: toForParams, lang: "fr", posCutoff, negCutoff, topN },
+        reviews
+      );
+    } catch (e) {
+      console.error("getReviewsThemes (OpenAI) error:", e?.message || e);
+      // en DEBUG, expose la raison pour t'aider; sinon 502 générique
+      const debug = process.env.DEBUG === "true";
+      return res.status(502).json({
+        ok: false,
+        error: "openai_failed",
+        reason: debug ? (e?.message || String(e)) : undefined
+      });
+    }
 
     return res.json({
       ok: true,
@@ -135,7 +174,7 @@ export async function getReviewsThemes(req, res) {
       axes: out.axes,
     });
   } catch (e) {
-    console.error("getReviewsThemes (OpenAI) error:", e);
-    return res.status(500).json({ ok: false, error: e?.message || "internal_error" });
+    console.error("getReviewsThemes error:", e?.message || e);
+    return res.status(500).json({ ok: false, error: "internal_error" });
   }
 }

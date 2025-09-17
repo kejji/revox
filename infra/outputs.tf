@@ -59,3 +59,23 @@ output "themes_queue_arn" {
   description = "ARN de la queue SQS pour l'analyse des themes"
   value       = trimspace(aws_sqs_queue.themes_queue.arn)
 }
+
+output "openai_secret_name" {
+  value       = var.openai_secret_name
+  description = "Nom du secret OpenAI dans Secrets Manager"
+}
+
+output "openai_url" {
+  value       = var.openai_url
+  description = "Endpoint Chat Completions OpenAI"
+}
+
+output "openai_model" {
+  value       = var.openai_model
+  description = "Modèle OpenAI à utiliser"
+}
+
+output "openai_secret_arn" {
+  value       = data.aws_secretsmanager_secret.openai.arn
+  description = "ARN du secret OpenAI"
+}
