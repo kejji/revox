@@ -6,6 +6,14 @@ const OPENAI_URL   = process.env.OPENAI_URL;
 const OPENAI_MODEL = process.env.OPENAI_MODEL;
 let OPENAI_KEY   = process.env.OPENAI_API_KEY;
 
+// Timeout utilitaire pour fetch
+function fetchWithTimeout(url, options = {}, ms = 25000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...options, signal: ctrl.signal })
+    .finally(() => clearTimeout(t));
+}
+
 async function ensureOpenAIKey() {
   if (OPENAI_KEY) return OPENAI_KEY;
   const secretName = process.env.OPENAI_SECRET_NAME;
@@ -187,13 +195,15 @@ export async function analyzeThemesWithOpenAI(
     response_format: { type: "json_object" },
     messages
   };
+  
+  console.log("[OpenAI] call", { url: OPENAI_URL, model: OPENAI_MODEL, msgs: messages.length });
 
-  const resp = await fetch(OPENAI_URL, {
+  const resp = await fetchWithTimeout(OPENAI_URL, {
     method: "POST",
     headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify(body)
-  });
-
+  }, 60000);
+  
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
     throw new Error(`OpenAI API error ${resp.status}: ${txt}`);

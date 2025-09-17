@@ -397,7 +397,7 @@ resource "aws_lambda_function" "api" {
   role             = aws_iam_role.lambda_exec.arn
   handler          = "index.handler"
   runtime          = "nodejs18.x"
-  timeout          = 10
+  timeout          = 60
   filename         = "${path.module}/dummy.zip"
   source_code_hash = filebase64sha256("${path.module}/dummy.zip")
   kms_key_arn      = aws_kms_key.lambda_env.arn
