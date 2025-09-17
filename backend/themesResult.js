@@ -10,9 +10,9 @@ const ddbDoc = DynamoDBDocumentClient.from(
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
-function todayYMD(){ return new Date().toISOString().slice(0,10); }
-function normalizeAppPkList(app_pk_raw){
-  const parts = String(app_pk_raw || "").split(",").map(s=>s.trim()).filter(Boolean);
+function todayYMD() { return new Date().toISOString().slice(0, 10); }
+function normalizeAppPkList(app_pk_raw) {
+  const parts = String(app_pk_raw || "").split(",").map(s => s.trim()).filter(Boolean);
   return Array.from(new Set(parts)).sort().join(",");
 }
 
@@ -24,15 +24,15 @@ function normalizeAppPkList(app_pk_raw){
  */
 export async function getThemesResult(req, res) {
   try {
-    if (!req.auth?.sub) return res.status(401).json({ ok:false, error: "unauthorized" });
-    if (!THEMES_TABLE) return res.status(500).json({ ok:false, error: "missing_APPS_THEMES_TABLE" });
+    if (!req.auth?.sub) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!THEMES_TABLE) return res.status(500).json({ ok: false, error: "missing_APPS_THEMES_TABLE" });
 
     const rawPk = req.query.app_pk;
-    if (!rawPk) return res.status(400).json({ ok:false, error: "app_pk is required" });
+    if (!rawPk) return res.status(400).json({ ok: false, error: "app_pk is required" });
     const app_pk = normalizeAppPkList(rawPk);
 
     const job_id = req.query.job_id && String(req.query.job_id).trim();
-    const day    = (req.query.day && String(req.query.day).trim()) || todayYMD();
+    const day = (req.query.day && String(req.query.day).trim()) || todayYMD();
 
     // ----- Mode A: résultat d’un job précis
     if (job_id) {
@@ -42,16 +42,14 @@ export async function getThemesResult(req, res) {
       }));
       const item = resp?.Item;
       if (!item) {
-        return res.status(404).json({ ok:false, error: "not_found", app_pk, day, job_id });
+        return res.status(404).json({ ok: false, error: "not_found", app_pk, day, job_id });
       }
       const { result, selection, total_reviews_considered, created_at, sk } = item;
       return res.json({
         ok: true, mode: "job",
         app_pk, day, job_id, sk, created_at, selection, total_reviews_considered,
-        axes: result?.axes || [],
         top_positive_axes: result?.top_positive_axes || [],
-        top_negative_axes: result?.top_negative_axes || [],
-        raw: result || null
+        top_negative_axes: result?.top_negative_axes || []
       });
     }
 
@@ -65,19 +63,17 @@ export async function getThemesResult(req, res) {
     }));
     const item = out?.Items?.[0];
     if (!item) {
-      return res.json({ ok:true, mode: "latest", app_pk, empty: true, axes: [], top_positive_axes: [], top_negative_axes: [] });
+      return res.json({ ok: true, mode: "latest", app_pk, empty: true, top_positive_axes: [], top_negative_axes: [] });
     }
     const { result, selection, total_reviews_considered, created_at, sk } = item;
     return res.json({
       ok: true, mode: "latest",
       app_pk, sk, created_at, selection, total_reviews_considered,
-      axes: result?.axes || [],
       top_positive_axes: result?.top_positive_axes || [],
-      top_negative_axes: result?.top_negative_axes || [],
-      raw: result || null
+      top_negative_axes: result?.top_negative_axes || []
     });
   } catch (e) {
     console.error("[/themes/result] error:", e?.message || e);
-    return res.status(500).json({ ok:false, error: "internal_error" });
+    return res.status(500).json({ ok: false, error: "internal_error" });
   }
 }
