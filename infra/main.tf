@@ -448,6 +448,8 @@ resource "aws_lambda_function" "api" {
       OPENAI_URL                      = var.openai_url
       APPS_THEMES_TABLE               = aws_dynamodb_table.apps_themes.name
       THEMES_QUEUE_URL                = aws_sqs_queue.themes_queue.url
+      APPS_THEMES_SCHEDULE_TABLE      = aws_dynamodb_table.apps_themes_schedule.name
+      THEMES_DEFAULT_INTERVAL_MINUTES = 1440
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
