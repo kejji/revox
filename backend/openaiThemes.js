@@ -195,9 +195,9 @@ export async function analyzeThemesWithOpenAI(
     response_format: { type: "json_object" },
     messages
   };
-  
-  console.log("[OpenAI] call", { url: OPENAI_URL, model: OPENAI_MODEL, msgs: messages.length });
 
+  console.log("[OpenAI] call", { url: OPENAI_URL, model: OPENAI_MODEL, msgs: messages.length });
+  console.log("key prefix", OPENAI_KEY.slice(0,7))
   const resp = await fetchWithTimeout(OPENAI_URL, {
     method: "POST",
     headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
