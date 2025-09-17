@@ -34,22 +34,22 @@ jobs:
         run: npm i -D esbuild
 
       - name: Bundle main handler
-        run: npx esbuild index.js --bundle --platform=node --target=node20 --outfile=../index.js
+        run: npx esbuild index.js --bundle --platform=node --target=node18 --outfile=../index.js
 
       - name: Bundle worker
-        run: npx esbuild worker.js --bundle --platform=node --target=node20 --outfile=../worker.js
+        run: npx esbuild worker.js --bundle --platform=node --target=node18 --outfile=../worker.js
 
       - name: Bundle userSync
-        run: npx esbuild userSync.js --bundle --platform=node --target=node20 --outfile=../userSync.js
+        run: npx esbuild userSync.js --bundle --platform=node --target=node18 --outfile=../userSync.js
 
       - name: Bundle ingestScheduler
-        run: npx esbuild ingestScheduler.js --bundle --platform=node --target=node20 --outfile=../ingestScheduler.js
+        run: npx esbuild ingestScheduler.js --bundle --platform=node --target=node18 --outfile=../ingestScheduler.js
 
       - name: Bundle themesWorker
-        run: npx esbuild themesWorker.js --bundle --platform=node --target=node20 --outfile=../themesWorker.js
+        run: npx esbuild themesWorker.js --bundle --platform=node --target=node18 --outfile=../themesWorker.js
 
       - name: Bundle themesScheduleRunner
-        run: npx esbuild themesScheduleRunner.js --bundle --platform=node --target=node20 --outfile=../themesScheduleRunner.js
+        run: npx esbuild themesScheduleRunner.js --bundle --platform=node --target=node18 --outfile=../themesScheduleRunner.js
 
       - name: Package bundle into zip
         run: zip revox-backend.zip index.js worker.js userSync.js ingestScheduler.js themesWorker.js themesScheduleRunner.js
