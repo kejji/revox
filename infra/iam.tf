@@ -131,8 +131,7 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "lambda:UpdateEventSourceMapping",
           "lambda:GetEventSourceMapping",
           "lambda:ListEventSourceMappings",
-          "lambda:DeleteEventSourceMapping"
-        ],
+          "lambda:DeleteEventSourceMapping"        ],
         Resource = "*"
       },
 
@@ -298,6 +297,65 @@ resource "aws_iam_user_policy" "terraform_user_kms_decrypt_lambda_env" {
       Effect   = "Allow",
       Action   = ["kms:Decrypt", "kms:DescribeKey"],
       Resource = aws_kms_key.lambda_env.arn
+    }]
+  })
+}
+
+# Autoriser le user à invoquer lambda themesScheduleRunner
+resource "aws_iam_policy" "lambda_invoke_revox_themes" {
+  name        = "lambda-invoke-revox-themes"
+  description = "Allow invoking revox-themes-scheduler"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Sid    = "InvokeSpecificFunction",
+      Effect = "Allow",
+      Action = ["lambda:InvokeFunction"],
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_user_policy_attachment" "terraform_user_invoke_revox_themes" {
+  user = aws_iam_user.terraform_user.name
+  policy_arn = aws_iam_policy.lambda_invoke_revox_themes.arn
+}
+
+resource "aws_iam_user_policy" "terraform_user_iam_readonly_inline" {
+  name = "terraform-user-IAMReadOnly"
+  user = aws_iam_user.terraform_user.name
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect: "Allow",
+      Action: [
+        "iam:GetUser",
+        "iam:ListUserPolicies",
+        "iam:ListAttachedUserPolicies",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion"
+      ],
+      Resource: "*"
+    }]
+  })
+}
+
+# Autoriser terraform-user à invoquer la Lambda revox-themes-scheduler
+resource "aws_iam_user_policy" "terraform_user_invoke_revox_themes_inline" {
+  name = "terraform-user-Invoke-revox-themes"
+  user = aws_iam_user.terraform_user.name
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect   = "Allow",
+      Action   = ["lambda:InvokeFunction"],
+      Resource = [
+        "arn:aws:lambda:eu-west-3:588738577999:function:revox-themes-scheduler",
+        "arn:aws:lambda:eu-west-3:588738577999:function:revox-themes-scheduler:*" # versions & alias
+      ]
     }]
   })
 }

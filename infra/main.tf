@@ -583,7 +583,7 @@ resource "aws_lambda_function" "themes_worker" {
 resource "aws_lambda_function" "themes_scheduler" {
   function_name    = "revox-themes-scheduler"
   role             = aws_iam_role.lambda_exec.arn
-  handler          = "themesScheduler.handler"
+  handler          = "themesScheduleRunner.handler"
   runtime          = "nodejs18.x"
   timeout          = 60
   filename         = "${path.module}/dummy.zip"
