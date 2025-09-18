@@ -1,7 +1,7 @@
 # 📱 Revox — Backend (API + BDD)
 
 **Revox** est un **backend** qui extrait et analyse les avis utilisateurs des apps mobiles (App Store & Google Play).  
-Il expose une **API sécurisée** consommée par un frontend externe (Lovable).
+Il expose une **API sécurisée** consommée par un frontend externe.
 
 ---
 
@@ -9,7 +9,7 @@ Il expose une **API sécurisée** consommée par un frontend externe (Lovable).
 
 - **Backend** : Node.js (Express) + JWT
 - **Infra** : AWS (Lambda, API Gateway HTTP API, DynamoDB, SQS, Cognito) via Terraform
-- **Frontend** : séparé (Lovable)
+- **Frontend** : séparé
 
 ```bash
 git clone https://github.com/kejji/revox.git
@@ -31,13 +31,11 @@ Authorization: Bearer <JWT_TOKEN>
 
 ## 📘 API
 
-> **Toutes** les routes ci-dessous (hors `/health` et `/search-app`) requièrent un JWT.
+> **Toutes** les routes ci-dessous (hors `/health`) requièrent un JWT.
 
 ### 🟢 Health
 **GET** `/health`  
-**Description** : Vérifie que l’API est en ligne et opérationnelle. Utile pour les sondes de monitoring.  
-
-Réponse :
+Réponse :  
 ```json
 { "status": "OK" }
 ```
@@ -46,17 +44,11 @@ Réponse :
 
 ### 🔎 Recherche d’apps
 **GET** `/search-app`  
-**Description** : Rechercher une app sur les stores iOS et Android à partir d’un mot-clé.  
-
-| Paramètre | Type   | Requis | Exemple  |
-|---|---|---|---|
-| `query` | string | ✅ | `notion` |
-
+Recherche d’apps sur iOS/Android à partir d’un mot-clé.
 **Exemple réponse**
 ```json
 [
-  { "store":"ios","name":"Notion","id":"123456","bundleId":"com.notionlabs.Notion","icon":"https://..." },
-  { "store":"android","name":"Notion","id":"com.notion.android","bundleId":"com.notion.android","icon":"https://..." }
+  { "store":"ios","name":"Notion","id":"123456","bundleId":"com.notionlabs.Notion","icon":"https://..." }, { "store":"android","name":"Notion","id":"com.notion.android","bundleId":"com.notion.android","icon":"https://..." }
 ]
 ```
 
@@ -173,18 +165,6 @@ Réponse :
 ```json
 { "app_pks": ["android#<bundleId>", "ios#<bundleId>"] }
 ```
-
-**Réponses** : incluent l’état `linked` après opération.
-
----
-
-### 🗂 Lancer une ingestion d’avis
-**POST** `/reviews/ingest`  
-**Body (JSON)**
-```json
-{ "bundleId": "com.instagram.android", "platform": "android", "appName": "Instagram", "backfillDays": 2 }
-```
-
 ---
 
 ### 💬 Récupérer les avis
@@ -212,6 +192,15 @@ GET /reviews?app_pk=android%23com.fortuneo.android,ios%23310633997&limit=50
 
 ---
 
+### 🗂 Ingestion d’avis
+**POST** `/reviews/ingest`  
+Déclenche une ingestion manuelle.  
+**Body (JSON)**
+```json
+{ "bundleId": "com.instagram.android", "platform": "android", "appName": "Instagram", "backfillDays": 2 }
+```
+---
+
 ### 📤 Export CSV des avis
 **GET** `/reviews/export`  
 **Description** : Export CSV sur une **plage de dates**, en mono ou multi-apps. Pas de `limit` exposé — l’API renvoie **l’intégralité** des avis dans `[from, to]`.  
@@ -229,70 +218,6 @@ GET /reviews?app_pk=android%23com.fortuneo.android,ios%23310633997&limit=50
 
 ---
 
-### 🧑‍🔬 Analyse de thèmes
-**GET** `/reviews/themes`  
-**Description** : Analyse les avis et en extrait automatiquement des **axes thématiques** (positifs et négatifs).  
-Basé sur un modèle IA (OpenAI), avec déduplication et fusion de synonymes.  
-Renvoie les **top 3 négatifs** et **top 3 positifs**, plus un breakdown complet par axe.
-
-**Query params** :  
-| Paramètre   | Type                 | Requis | Exemple |
-|-------------|----------------------|--------|---------|
-| `app_pk`    | string (mono **ou** multi, séparé par virgules) | ✅ | `android%23com.fortuneo.android,ios%23com.fortuneo.fortuneo` |
-| `from` / `to` | ISO date | optionnel | `2025-08-01T00:00:00.000Z` / `2025-09-01T23:59:59.999Z` |
-| `count`     | number | optionnel (exclusif avec `from/to`) | `200` |
-| `pos_cutoff`| number (0..5, défaut 4) | optionnel | `4` |
-| `neg_cutoff`| number (0..5, défaut 3) | optionnel | `3` |
-| `topn`      | number (1..5, défaut 3) | optionnel | `3` |
-| `include_breakdown` | 0/1 | optionnel | `1` |
-
-**Exemple 1 — par période**
-```http
-GET /reviews/themes?app_pk=android%23com.fortuneo.android&from=2025-08-01T00:00:00.000Z&to=2025-09-01T23:59:59.999Z
-```
-
-**Exemple 2 — par nombre d’avis récents**
-```http
-GET /reviews/themes?app_pk=android%23com.fortuneo.android&count=200
-```
-
-**Exemple réponse**
-```json
-{
-  "ok": true,
-  "params": {
-    "app_pks": ["android#com.fortuneo.android"],
-    "from": "2025-08-01T00:00:00.000Z",
-    "to": "2025-09-01T23:59:59.999Z",
-    "count": 200,
-    "total_reviews": 200,
-    "pos_cutoff": 4,
-    "neg_cutoff": 3,
-    "model": "gpt-4o-mini"
-  },
-  "top_negative_axes": [
-    {
-      "axis_id":"service_client",
-      "axis_label":"Service client / Réactivité",
-      "count":12,
-      "avg_rating":1.2,
-      "examples":[ ... ]
-    }
-  ],
-  "top_positive_axes": [
-    {
-      "axis_id":"ergonomie",
-      "axis_label":"Ergonomie / Simplicité",
-      "count":8,
-      "avg_rating":4.6,
-      "examples":[ ... ]
-    }
-  ],
-  "axes": [ ... ]
-}
-```
----
-
 ### ⏱️ Programmer l’ingestion
 **PUT** `/ingest/schedule`  
 **GET** `/ingest/schedule`  
@@ -300,28 +225,88 @@ GET /reviews/themes?app_pk=android%23com.fortuneo.android&count=200
 
 ---
 
-**Exemple 1 — par période**
-```http
-GET /reviews/themes?app_pk=android%23com.fortuneo.android&from=2025-08-01T00:00:00.000Z&to=2025-09-01T23:59:59.999Z
+### 🧑‍🔬 Analyse de thèmes
+
+#### 1. Lancer une analyse (envoi message SQS)
+**POST** `/themes/enqueue`  
+**Body** (limit)
+```json
+{ "app_pk": "android#com.fortuneo.android,ios#com.fortuneo.fortuneo", "limit": 100 }
+```
+ou (from/to)
+```json
+{"app_pk":"ios#com.fortuneo.fortuneo,android#com.fortuneo.android","from":"2025-06-17T00:00:00.000Z","to":"2025-09-17T00:00:00.000Z"}
+```
+→ Crée un item `pending#<day>#<job_id>` et envoie un message SQS pour le worker.
+
+---
+
+#### 2. Vérifier l’état
+**GET** `/themes/status?app_pk=<...>&job_id=<...>&day=<YYYY-MM-DD>`  
+
+Réponse typique :  
+```json
+{ "ok": true, "status": "pending" }
+```
+ou  
+```json
+{ "ok": true, "status": "failed", "error": "OpenAI timeout" }
 ```
 
-**Exemple 2 — par nombre d’avis récents**
-```http
-GET /reviews/themes?app_pk=android%23com.fortuneo.android&count=200
-```
+---
 
-**Exemple réponse**
+#### 3. Récupérer le résultat final
+**GET** `/themes/result?app_pk=<...>&job_id=<...>&day=<YYYY-MM-DD>`  
+
+Réponse :  
 ```json
 {
   "ok": true,
-  "top_negative_axes": [
-    { "axis_id":"card_issues","axis_label":"Carte / Blocages","count":26,"avg_rating":1.69,"examples":[ ... ] },
-    { "axis_id":"customer_support","axis_label":"Service client","count":15,"avg_rating":1.47,"examples":[ ... ] }
-  ],
-  "top_positive_axes": [
-    { "axis_id":"fees_pricing","axis_label":"Tarifs / Frais","count":3,"avg_rating":4.67,"examples":[ ... ] }
-  ],
-  "axes": [ ... ]
+  "day": "2025-09-17",
+  "job_id": "job_xxx",
+  "top_positive_axes": [ ... ],
+  "top_negative_axes": [ ... ]
+}
+```
+
+---
+
+#### 4. Programmer une analyse quotidienne
+**PUT** `/themes/schedule`  
+**GET** `/themes/schedule`  
+**GET** `/themes/schedule/list`  
+
+Permet de planifier une analyse journalière automatique. 
+
+Exemple:
+
+**PUT** `/themes/schedule?run-now=true`  
+Request Body
+```json
+{ "app_pk":"android#com.fortuneo.android,ios#com.fortuneo.fortuneo", "appName":"Fortuneo", "interval_minutes":1440 }
+```
+Response Body
+```json
+{
+    "ok": true,
+    "schedule": {
+        "app_pk": "android#com.fortuneo.android,ios#com.fortuneo.fortuneo",
+        "due_pk": "DUE",
+        "appName": "Fortuneo - la banque en ligne",
+        "interval_minutes": 1440,
+        "enabled": true,
+        "last_enqueued_at": 0,
+        "next_run_at": 1758240440949,
+        "last_enqueued_at_iso": null,
+        "next_run_at_iso": "2025-09-19T00:07:20.949Z"
+    },
+    "created": true,
+    "run_now": {
+        "ok": true,
+        "job_id": "job_wpltxtmfonis9o",
+        "day": "2025-09-18",
+        "messageId": "02b1d32c-0b5d-4b8a-9d1b-4c245de40447"
+    }
 }
 ```
 
@@ -329,32 +314,27 @@ GET /reviews/themes?app_pk=android%23com.fortuneo.android&count=200
 
 ## 🗃️ Tables DynamoDB
 
-| Table                 | PK            | SK         | Description                          |
-|---|---|---|---|
-| `revox_user_follows`  | `user_id`     | `app_pk`   | Lien user → apps suivies (+ item `APP_LINKS` pour fusions) |
-| `apps_metadata`       | `app_pk`      | —          | Nom, icône, store ids…               |
-| `revox_app_reviews`   | `app_pk`      | `ts_review`| Avis utilisateurs ingérés            |
-| `revox_users`         | `id`          | —          | Utilisateurs Cognito                 |
-| `apps_ingest_schedule`| `app_pk`      | `due_pk`   | Planification des jobs d’ingestion   |
+| Table                   | PK         | SK         | Description |
+|-------------------------|------------|------------|-------------|
+| `revox_user_follows`    | `user_id`  | `app_pk`   | Liens user → apps suivies (+ fusions) |
+| `apps_metadata`         | `app_pk`   | —          | Métadonnées apps |
+| `revox_app_reviews`     | `app_pk`   | `ts_review`| Avis utilisateurs ingérés |
+| `apps_ingest_schedule`  | `app_pk`   | `due_pk`   | Planning ingestion |
+| `apps_themes`           | `app_pk`   | `sk`       | Analyses de thèmes (`pending#day#job`, `theme#day#job`) |
+| `apps_themes_schedule`  | `app_pk`   | —          | Planning analyses de thèmes (quotidien) |
+| `revox_users`           | `id`       | —          | Utilisateurs Cognito |
 
 ---
 
 ## 🔧 Variables d’environnement (extraits)
 
-- `USER_FOLLOWS_TABLE` = `revox_user_follows`
-- `APPS_METADATA_TABLE` = `apps_metadata`
-- `APPS_INGEST_SCHEDULE_TABLE` = `apps_ingest_schedule`
-- `REVIEWS_TABLE` = `revox_app_reviews`
-- `EXTRACTION_QUEUE_URL` (SQS), `AWS_REGION`, etc.
-
----
-
-## 🔒 IAM (extraits requis côté Lambda `api`)
-
-- Sur `revox_user_follows` : `GetItem`, `PutItem`, `UpdateItem`, `Query`
-- Sur `apps_metadata` : `GetItem`, `PutItem`
-- Sur `revox_app_reviews` : `Query`
-- Sur `apps_ingest_schedule` : `GetItem`, `PutItem`, `UpdateItem`, `Query`
+- `APP_REVIEWS_TABLE` = `revox_app_reviews`  
+- `USER_FOLLOWS_TABLE` = `revox_user_follows`  
+- `APPS_METADATA_TABLE` = `apps_metadata`  
+- `APPS_INGEST_SCHEDULE_TABLE` = `apps_ingest_schedule`  
+- `APPS_THEMES_TABLE` = `apps_themes`  
+- `APPS_THEMES_SCHEDULE_TABLE` = `apps_themes_schedule`  
+- `EXTRACTION_QUEUE_URL`, `THEMES_QUEUE_URL`, `AWS_REGION`, etc.  
 
 ---
 
