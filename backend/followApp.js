@@ -10,7 +10,7 @@ import {
   BatchGetCommand
 } from "@aws-sdk/lib-dynamodb";
 import { searchAppMetadata } from "./searchAppMetadata.js";
-import { getLinks } from "./appLinks.js";
+import { getLinks, unlinkPair } from "./appLinks.js";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { upsertThemesSchedule } from "./themesScheduleApi.js";
 
@@ -20,7 +20,7 @@ const APPS_METADATA_TABLE = process.env.APPS_METADATA_TABLE;
 const APPS_INGEST_SCHEDULE_TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
 const DEFAULT_INTERVAL_MIN = Number.isFinite(parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10))
   ? parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10)
-  : 60; // fallback 60 min
+  : 60;
 
 const QUEUE_URL = process.env.EXTRACTION_QUEUE_URL;
 const sqs = new SQSClient({ region: REGION });
@@ -42,7 +42,7 @@ async function getAppName(appKey) {
       ProjectionExpression: "#n, bundleId",
       ExpressionAttributeNames: { "#n": "name" }
     }));
-    const fallback = appKey.split("#")[1] || null; // bundleId
+    const fallback = appKey.split("#")[1] || null;
     return out?.Item?.name ?? fallback;
   } catch {
     return appKey.split("#")[1] || null;
@@ -50,7 +50,6 @@ async function getAppName(appKey) {
 }
 
 /* ===================== SCHEDULE ===================== */
-
 async function ensureScheduleForApp(appKey) {
   const now = nowMs();
   const nowIso = new Date().toISOString();
@@ -112,48 +111,46 @@ async function enqueueImmediateIngest({ platform, bundleId, backfillDays = 2 }) 
 }
 
 /* =============== METADATA (UPSERT + LAZY REFRESH) =============== */
-
 async function upsertAppMetadata(appKey, bundleId, platform) {
   try {
     const meta = await searchAppMetadata(bundleId, platform);
     if (!meta) return;
-    await ddb.send(
-      new UpdateCommand({
-        TableName: APPS_METADATA_TABLE,
-        Key: { app_pk: appKey },
-        UpdateExpression:
-          "SET #name = if_not_exists(#name, :name), " +
-          "#icon = if_not_exists(#icon, :icon), " +
-          "#platform = :platform, " +
-          "#bundleId = :bundleId, " +
-          "#version = :version, " +
-          "#rating = :rating, " +
-          "#releaseNotes = :releaseNotes, " +
-          "#lastUpdatedAt = :lastUpdatedAt, " +
-          "#lastUpdated = :now",
-        ExpressionAttributeNames: {
-          "#name": "name",
-          "#icon": "icon",
-          "#platform": "platform",
-          "#bundleId": "bundleId",
-          "#version": "version",
-          "#rating": "rating",
-          "#releaseNotes": "releaseNotes",
-          "#lastUpdatedAt": "lastUpdatedAt",
-          "#lastUpdated": "lastUpdated",
-        },
-        ExpressionAttributeValues: {
-          ":name": meta.name ?? null,
-          ":icon": meta.icon ?? null,
-          ":platform": platform,
-          ":bundleId": bundleId,
-          ":version": meta.version ?? null,
-          ":rating": meta.rating ?? null,
-          ":releaseNotes": meta.releaseNotes ?? null,
-          ":lastUpdatedAt": meta.lastUpdatedAt ?? null,
-          ":now": new Date().toISOString()
-        }
-      }));
+    await ddb.send(new UpdateCommand({
+      TableName: APPS_METADATA_TABLE,
+      Key: { app_pk: appKey },
+      UpdateExpression:
+        "SET #name = if_not_exists(#name, :name), " +
+        "#icon = if_not_exists(#icon, :icon), " +
+        "#platform = :platform, " +
+        "#bundleId = :bundleId, " +
+        "#version = :version, " +
+        "#rating = :rating, " +
+        "#releaseNotes = :releaseNotes, " +
+        "#lastUpdatedAt = :lastUpdatedAt, " +
+        "#lastUpdated = :now",
+      ExpressionAttributeNames: {
+        "#name": "name",
+        "#icon": "icon",
+        "#platform": "platform",
+        "#bundleId": "bundleId",
+        "#version": "version",
+        "#rating": "rating",
+        "#releaseNotes": "releaseNotes",
+        "#lastUpdatedAt": "lastUpdatedAt",
+        "#lastUpdated": "lastUpdated",
+      },
+      ExpressionAttributeValues: {
+        ":name": meta.name ?? null,
+        ":icon": meta.icon ?? null,
+        ":platform": platform,
+        ":bundleId": bundleId,
+        ":version": meta.version ?? null,
+        ":rating": meta.rating ?? null,
+        ":releaseNotes": meta.releaseNotes ?? null,
+        ":lastUpdatedAt": meta.lastUpdatedAt ?? null,
+        ":now": new Date().toISOString()
+      }
+    }));
   } catch (e) {
     console.warn("upsertAppMetadata: skipped", appKey, e?.message || e);
   }
@@ -319,6 +316,10 @@ export async function followApp(req, res) {
   }
 }
 
+/**
+ * NEW: Lors d’un unfollow, on "unmerge" d’abord l’app courante
+ * en supprimant tous ses liens de fusion, puis on supprime le follow.
+ */
 export async function unfollowApp(req, res) {
   const userId = req.auth?.sub;
   const { bundleId, platform } = req.body || {};
@@ -326,17 +327,37 @@ export async function unfollowApp(req, res) {
   if (!bundleId || !platform) return res.status(400).json({ error: "bundleId et platform sont requis" });
 
   const appKey = `${String(platform).toLowerCase()}#${bundleId}`;
+
   try {
+    // 1) Unmerge d'abord: pour chaque lien existant avec appKey, on retire la paire.
+    const links = await getLinks(userId); // objet { [app_pk]: string[] }
+    const linkedList = Array.isArray(links?.[appKey]) ? Array.from(new Set(links[appKey])) : [];
+
+    for (const other of linkedList) {
+      try {
+        await unlinkPair(userId, appKey, other);
+      } catch (e) {
+        console.warn("unfollowApp: unlinkPair failed", appKey, other, e?.message || e);
+      }
+    }
+
+    // 2) Supprimer le suivi de l’app
     await ddb.send(new DeleteCommand({
       TableName: USER_FOLLOWS_TABLE,
       Key: { user_id: userId, app_pk: appKey }
     }));
-    return res.status(200).json({ ok: true, unfollowed: { bundleId, platform } });
+
+    return res.status(200).json({
+      ok: true,
+      unfollowed: { bundleId, platform },
+      unmerged_from: linkedList // info utile de traçabilité
+    });
   } catch (err) {
     console.error("Erreur unfollowApp:", err);
     return res.status(500).json({ error: "Erreur serveur" });
   }
 }
+
 
 export async function getFollowedApps(req, res) {
   const userId = req.auth?.sub;
