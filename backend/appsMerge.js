@@ -2,6 +2,17 @@
 import { linkPair, unlinkPair, getLinks, ensureLinksDoc } from "./appLinks.js";
 import { upsertThemesSchedule } from "./themesScheduleApi.js";
 
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
+
+const REGION = process.env.AWS_REGION;
+const APPS_METADATA_TABLE = process.env.APPS_METADATA_TABLE;
+
+const ddb = DynamoDBDocumentClient.from(
+  new DynamoDBClient({ region: REGION }),
+  { marshallOptions: { removeUndefinedValues: true } }
+);
+
 function validateAppPks(input) {
   if (!input || !Array.isArray(input.app_pks)) return 'Body attendu: { app_pks: ["android#...","ios#..."] }';
   const { app_pks } = input;
@@ -12,12 +23,36 @@ function validateAppPks(input) {
   return null;
 }
 
-// Normalise une clé de groupe pour les thèmes (ordre stable)
+// Clé de groupe stable pour thèmes
 const groupKey = (arr) => {
   const clean = (arr || []).map(s => String(s || "").trim()).filter(Boolean);
-  clean.sort(); // ordre alphabétique pour stabilité/idempotence
+  clean.sort();
   return clean.join(",");
 };
+
+// --- helpers: appName du groupe (lit APPS_METADATA_TABLE) ---
+async function getSingleName(app_pk) {
+  try {
+    const out = await ddb.send(new GetCommand({
+      TableName: APPS_METADATA_TABLE,
+      Key: { app_pk },
+      ProjectionExpression: "#n, bundleId",
+      ExpressionAttributeNames: { "#n": "name" }
+    }));
+    return out?.Item?.name ?? (app_pk.split("#")[1] || null);
+  } catch {
+    return app_pk.split("#")[1] || null;
+  }
+}
+async function getMergedAppName(app_pks) {
+  const names = [];
+  for (const pk of app_pks) {
+    const n = await getSingleName(pk);
+    if (n) names.push(n);
+  }
+  const unique = Array.from(new Set(names));
+  return unique.length ? unique.join(" + ") : null; // ex: "Fortuneo + Fortuneo Pro"
+}
 
 export async function mergeApps(req, res) {
   const userId = req.auth?.sub;
@@ -33,15 +68,14 @@ export async function mergeApps(req, res) {
     await ensureLinksDoc(userId);
     await linkPair(userId, a, b);
 
-    // 2) Lancer l'analyse Thèmes sur le groupe fusionné (a+b)
-    //    -> on appelle directement le handler upsertThemesSchedule (sans HTTP)
-    //       avec run_now=true pour avoir immédiatement un job.
+    // 2) Lancer l'analyse Thèmes sur le groupe fusionné (a+b) avec appName renseigné
     const merged = groupKey([a, b]); // ex: "android#...,ios#..."
     let run_now = { job_id: null, day: null };
     try {
+      const appName = await getMergedAppName([a, b]);
       const fakeReq = {
-        auth: req.auth, // propage l'auth si ton handler la vérifie
-        body: { app_pk: merged, enabled: true },
+        auth: req.auth,
+        body: { app_pk: merged, enabled: true, appName },
         query: { run_now: "true" }
       };
       let captured = null;
@@ -52,10 +86,7 @@ export async function mergeApps(req, res) {
             return captured;
           }
         }),
-        json: (payload) => { // au cas où le handler fait res.json(payload)
-          captured = { code: 200, body: payload };
-          return captured;
-        }
+        json: (payload) => { captured = { code: 200, body: payload }; return captured; }
       };
 
       await upsertThemesSchedule(fakeReq, fakeRes);

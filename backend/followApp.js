@@ -33,10 +33,25 @@ const nowMs = () => Date.now();
 const minutes = (n) => n * 60 * 1000;
 const appKeyOf = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
 
+/* ------------------- helpers: app name ------------------- */
+async function getAppName(appKey) {
+  try {
+    const out = await ddb.send(new GetCommand({
+      TableName: APPS_METADATA_TABLE,
+      Key: { app_pk: appKey },
+      ProjectionExpression: "#n, bundleId",
+      ExpressionAttributeNames: { "#n": "name" }
+    }));
+    const fallback = appKey.split("#")[1] || null; // bundleId
+    return out?.Item?.name ?? fallback;
+  } catch {
+    return appKey.split("#")[1] || null;
+  }
+}
+
 /* ===================== SCHEDULE ===================== */
 
 async function ensureScheduleForApp(appKey) {
-  // On initialise l'item s'il n'existe pas, sans écraser s'il existe déjà
   const now = nowMs();
   const nowIso = new Date().toISOString();
   await ddb.send(new UpdateCommand({
@@ -60,12 +75,10 @@ async function ensureScheduleForApp(appKey) {
 }
 
 /* =============== SQS ENQUEUE =============== */
-// Envoie un message SQS en lisant le "name" depuis APPS_METADATA_TABLE (plus de dépendance à appName du schedule)
 async function enqueueImmediateIngest({ platform, bundleId, backfillDays = 2 }) {
   if (!QUEUE_URL) throw new Error("Missing EXTRACTION_QUEUE_URL");
   const key = appKeyOf(platform, bundleId);
 
-  // Récupère le nom depuis la metadata table
   let appName = null;
   try {
     const metaRes = await ddb.send(new GetCommand({
@@ -146,10 +159,6 @@ async function upsertAppMetadata(appKey, bundleId, platform) {
   }
 }
 
-/**
- * Si meta absente/incomplète au moment du GET, on relit le store et on upsert.
- * Renvoie toujours l’état courant (après éventuel refresh).
- */
 async function getOrRefreshMetadata(appKey, platform, bundleId) {
   const current = await ddb.send(new GetCommand({
     TableName: APPS_METADATA_TABLE,
@@ -161,7 +170,6 @@ async function getOrRefreshMetadata(appKey, platform, bundleId) {
 
   if (hasEnough) return current.Item;
 
-  // Lazy refresh
   const fresh = await searchAppMetadata(bundleId, platform);
   if (fresh) {
     await ddb.send(new UpdateCommand({
@@ -242,7 +250,7 @@ export async function followApp(req, res) {
       if (e?.name !== "ConditionalCheckFailedException") throw e;
     }
 
-    // 2) Upsert metadata (name, icon, version, rating, releaseNotes…)
+    // 2) Upsert metadata
     await upsertAppMetadata(appKey, bundleId, platform);
 
     // 3) Assure un planning d’ingestion
@@ -271,13 +279,13 @@ export async function followApp(req, res) {
       console.warn("followApp: immediate enqueue failed", e?.message || e);
     }
 
-    // 5) 🔥 Appel interne de l’API /themes/schedule (sans HTTP) pour run_now
+    // 5) Run themes schedule (internal) avec appName renseigné
     let run_now = { job_id: null, day: null };
     try {
-      // On simule un req/res Express très simple
+      const appName = await getAppName(appKey);
       const fakeReq = {
-        auth: req.auth, // on propage l’auth (si ton handler la vérifie)
-        body: { app_pk: appKey, enabled: true },
+        auth: req.auth,
+        body: { app_pk: appKey, enabled: true, appName },
         query: { run_now: "true" }
       };
       let captured = null;
@@ -285,12 +293,12 @@ export async function followApp(req, res) {
         status: (code) => ({
           json: (payload) => {
             captured = { code, body: payload };
-            return captured; // pour permettre await sur le retour
+            return captured;
           }
-        })
+        }),
+        json: (payload) => { captured = { code: 200, body: payload }; return captured; }
       };
       await upsertThemesSchedule(fakeReq, fakeRes);
-
       const body = captured?.body ?? null;
       const rn = body?.run_now ?? body ?? {};
       run_now.job_id = rn?.job_id ?? null;
@@ -344,19 +352,16 @@ export async function getFollowedApps(req, res) {
     const items = result.Items ?? [];
     if (!items.length) return res.status(200).json({ followed: [] });
 
-    const linksMap = await getLinks(userId); // { [app_pk]: string[] }
+    const linksMap = await getLinks(userId);
     const dedup = (arr) => Array.from(new Set(Array.isArray(arr) ? arr : []));
 
-    // Garde uniquement les clés "réelles" (pas APP_LINKS)
     const follows = items.filter(it => it.app_pk && it.app_pk !== "APP_LINKS");
 
-    // Map (app_pk -> last_seen_total/at) pour calcul badge
     const seenMap = new Map(follows.map(it => [it.app_pk, {
       last_seen_total: Number.isFinite(it.last_seen_total) ? it.last_seen_total : 0,
       last_seen_at: it.last_seen_at || null
     }]));
 
-    // BatchGet des total_reviews (chunker si >100 au besoin)
     const keys = follows.map(f => ({ app_pk: f.app_pk }));
     const bg = await ddb.send(new BatchGetCommand({
       RequestItems: {
@@ -369,7 +374,6 @@ export async function getFollowedApps(req, res) {
     }));
     const totals = new Map((bg.Responses?.[APPS_METADATA_TABLE] || []).map(i => [i.app_pk, i["total_reviews"] || 0]));
 
-    // Enrichissement: si meta manquante/incomplète, on relit le store (lazy refresh)
     const enriched = await Promise.all(follows.map(async (it) => {
       const appKey = it.app_pk;
       const [platform, bundleId] = appKey.split("#", 2);
@@ -381,8 +385,6 @@ export async function getFollowedApps(req, res) {
       const effectiveSeen = (rawSeen === -1) ? total : rawSeen;
       const badge = Math.max(0, total - effectiveSeen);
 
-      // Read-repair: si on a une sentinelle -1 et qu'il y a maintenant des reviews,
-      // on corrige en base de façon idempotente (sans changer last_seen_at).
       if (rawSeen === -1 && total > 0) {
         try {
           await ddb.send(new UpdateCommand({
@@ -392,9 +394,7 @@ export async function getFollowedApps(req, res) {
             ConditionExpression: "attribute_exists(user_id) AND attribute_exists(app_pk) AND last_seen_total = :minusOne",
             ExpressionAttributeValues: { ":seen": total, ":minusOne": -1 }
           }));
-        } catch (e) {
-          // ignore si condition échoue (déjà corrigé ailleurs)
-        }
+        } catch (e) {}
       }
 
       return {
@@ -431,7 +431,6 @@ export async function markFollowRead(req, res) {
   const pk = appKeyOf(platform, bundleId);
 
   try {
-    // Récupère le total_reviews actuel (source de vérité = APPS_METADATA_TABLE)
     const meta = await ddb.send(new GetCommand({
       TableName: APPS_METADATA_TABLE,
       Key: { app_pk: pk },
