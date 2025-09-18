@@ -12,6 +12,7 @@ import {
 import { searchAppMetadata } from "./searchAppMetadata.js";
 import { getLinks } from "./appLinks.js";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+import { upsertThemesSchedule } from "./themesScheduleApi.js";
 
 const REGION = process.env.AWS_REGION;
 const USER_FOLLOWS_TABLE = process.env.USER_FOLLOWS_TABLE;
@@ -31,6 +32,7 @@ const ddb = DynamoDBDocumentClient.from(
 const nowMs = () => Date.now();
 const minutes = (n) => n * 60 * 1000;
 const appKeyOf = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
+
 /* ===================== SCHEDULE ===================== */
 
 async function ensureScheduleForApp(appKey) {
@@ -269,10 +271,39 @@ export async function followApp(req, res) {
       console.warn("followApp: immediate enqueue failed", e?.message || e);
     }
 
+    // 5) 🔥 Appel interne de l’API /themes/schedule (sans HTTP) pour run_now
+    let run_now = { job_id: null, day: null };
+    try {
+      // On simule un req/res Express très simple
+      const fakeReq = {
+        auth: req.auth, // on propage l’auth (si ton handler la vérifie)
+        body: { app_pk: appKey, enabled: true },
+        query: { run_now: "true" }
+      };
+      let captured = null;
+      const fakeRes = {
+        status: (code) => ({
+          json: (payload) => {
+            captured = { code, body: payload };
+            return captured; // pour permettre await sur le retour
+          }
+        })
+      };
+      await upsertThemesSchedule(fakeReq, fakeRes);
+
+      const body = captured?.body ?? null;
+      const rn = body?.run_now ?? body ?? {};
+      run_now.job_id = rn?.job_id ?? null;
+      run_now.day = rn?.day ?? rn?.date ?? null;
+    } catch (e) {
+      console.warn("followApp: upsertThemesSchedule (internal) failed", e?.message || e);
+    }
+
     return res.status(201).json({
       ok: true,
       followed: { bundleId, platform, followedAt: nowIso },
-      schedule: sched
+      schedule: sched,
+      run_now
     });
   } catch (err) {
     console.error("Erreur followApp:", err);
