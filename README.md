@@ -56,7 +56,7 @@ Recherche d’apps sur iOS/Android à partir d’un mot-clé.
 
 ### ⭐ Suivre une app
 **POST** `/follow-app`  
-**Description** : Lie l’app à l’utilisateur et planifie automatiquement l’ingestion (`PUT /ingest/schedule`). Idempotent.  
+**Description** : Lie l’app à l’utilisateur et planifie l’ingestion (`PUT /ingest/schedule`) et l'analyse de thématiques (`PUT /themes/schedule`).  
 
 **Body (JSON)**
 ```json
@@ -158,6 +158,7 @@ Recherche d’apps sur iOS/Android à partir d’un mot-clé.
 ---
 
 ### 🧷 Fusion d’applications
+Fusionne deux applications (iOS + Android) et programme l'analyse des thèmes (`PUT /themes/schedule`)
 **POST** `/apps/merge`  
 **DELETE** `/apps/merge`  
 
