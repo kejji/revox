@@ -2,9 +2,9 @@
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 
 // --- Config OpenAI ---
-const OPENAI_URL = process.env.OPENAI_URL;
+const OPENAI_URL   = process.env.OPENAI_URL;
 const OPENAI_MODEL = process.env.OPENAI_MODEL;
-let OPENAI_KEY = process.env.OPENAI_API_KEY;
+let OPENAI_KEY   = process.env.OPENAI_API_KEY;
 
 // Timeout utilitaire pour fetch
 function fetchWithTimeout(url, options = {}, ms = 60000) {
@@ -47,7 +47,7 @@ function toAxisId(label) {
     .replace(/\s+/g, "_");
 }
 
-function dedupeExamples(arr, max = null) {
+function dedupeExamples(arr) {
   const seen = new Set();
   const out = [];
   for (const ex of (arr || [])) {
@@ -60,8 +60,7 @@ function dedupeExamples(arr, max = null) {
         text: truncate(String(ex.text).replace(/\s+/g, " ").trim(), 240),
       });
     }
-    // si max est fourni (>0), on peut couper; sinon pas de limite
-    if (max && out.length >= max) break;
+    if (out.length >= 3) break; // max 3 exemples par axe
   }
   return out;
 }
@@ -84,7 +83,7 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
         `Polarité: note <= ${negCutoff} = négatif, note >= ${posCutoff} = positif; sinon infère le ton du texte.`,
         "Labels: courts et concrets (ex: “Affichage tardif des transactions”, “Problèmes de connexion et authentification”, “Notifications intempestives”).",
         "Disjonction stricte: un axe ne doit JAMAIS être à la fois en négatif et en positif.",
-        "Exemples: inclure TOUS les commentaires pertinents qui relèvent de l’axe (sans limite), exemples distincts, concis.",        
+        "Exemples: max 3 par axe, distincts, concis.",
         "Réponds STRICTEMENT en JSON conforme au schéma fourni."
       ].join(" ")
     },
@@ -148,7 +147,7 @@ function postProcess(raw) {
         axis_id: toAxisId(label),
         count: toNum(item?.count) ?? 0,
         avg_rating: toNum(item?.avg_rating),
-        examples: dedupeExamples(item?.examples || [], 30),
+        examples: dedupeExamples(item?.examples || []),
       };
     });
 
@@ -198,13 +197,13 @@ export async function analyzeThemesWithOpenAI(
   };
 
   console.log("[OpenAI] call", { url: OPENAI_URL, model: OPENAI_MODEL, msgs: messages.length });
-  console.log("key prefix", OPENAI_KEY.slice(0, 7))
+  console.log("key prefix", OPENAI_KEY.slice(0,7))
   const resp = await fetchWithTimeout(OPENAI_URL, {
     method: "POST",
     headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify(body)
   }, 60000);
-
+  
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
     throw new Error(`OpenAI API error ${resp.status}: ${txt}`);
