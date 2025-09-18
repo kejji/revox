@@ -10,6 +10,14 @@ const ddbDoc = DynamoDBDocumentClient.from(
   { marshallOptions: { removeUndefinedValues: true } }
 );
 
+function setNoCacheHeaders(res) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  // utile pour le front web JS : expose ces headers
+  res.setHeader("Access-Control-Expose-Headers", "Cache-Control, Pragma, Expires");
+}
+
 const todayYMD = () => new Date().toISOString().slice(0, 10);
 function normalizeAppPkList(app_pk_raw) {
   const parts = String(app_pk_raw || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -74,6 +82,7 @@ export async function getThemesResult(req, res) {
       // 1) Tente le résultat final
       const final = await getFinal(ddbDoc, app_pk, day, job_id);
       if (final) {
+        setNoCacheHeaders(res);
         return res.json({
           ok: true,
           mode: "job",
@@ -93,6 +102,7 @@ export async function getThemesResult(req, res) {
       // 2) Sinon, regarde le pending (le worker écrit pending dès le démarrage)
       const pending = await getPending(ddbDoc, app_pk, day, job_id);
       if (pending) {
+        setNoCacheHeaders(res);
         return res.json({
           ok: true,
           mode: "job",
@@ -111,6 +121,7 @@ export async function getThemesResult(req, res) {
       }
 
       // 3) Rien trouvé (pas encore écrit, ou clé day erronée)
+      setNoCacheHeaders(res);
       return res.status(404).json({ ok: false, error: "not_found", app_pk, day, job_id });
     }
 
@@ -122,6 +133,7 @@ export async function getThemesResult(req, res) {
     ]);
 
     if (!latestFinal && !latestPending) {
+      setNoCacheHeaders(res);
       return res.json({
         ok: true, mode: "latest", app_pk, empty: true,
         status: null, job_id: null, day: null,
@@ -137,6 +149,7 @@ export async function getThemesResult(req, res) {
       (!!latestPending && (!latestFinal || (dayP && (!dayF || dayP >= dayF))));
 
     if (pickPending) {
+      setNoCacheHeaders(res);
       return res.json({
         ok: true,
         mode: "latest",
@@ -155,6 +168,7 @@ export async function getThemesResult(req, res) {
     }
 
     // Sinon, on renvoie le dernier résultat final
+    setNoCacheHeaders(res);
     return res.json({
       ok: true,
       mode: "latest",
@@ -171,6 +185,7 @@ export async function getThemesResult(req, res) {
     });
   } catch (e) {
     console.error("[/themes/result] error:", e?.message || e);
+    setNoCacheHeaders(res);
     return res.status(500).json({ ok: false, error: "internal_error" });
   }
 }
