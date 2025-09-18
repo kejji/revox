@@ -7,7 +7,7 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL;
 let OPENAI_KEY   = process.env.OPENAI_API_KEY;
 
 // Timeout utilitaire pour fetch
-function fetchWithTimeout(url, options = {}, ms = 60000) {
+function fetchWithTimeout(url, options = {}, ms = 180000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   return fetch(url, { ...options, signal: ctrl.signal })
