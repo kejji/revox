@@ -5,9 +5,9 @@ import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-sec
 const OPENAI_URL   = process.env.OPENAI_URL;
 const OPENAI_MODEL = process.env.OPENAI_MODEL;
 let OPENAI_KEY   = process.env.OPENAI_API_KEY;
-
+const OPENAI_TIMEOUT = 150000; // 150s
 // Timeout utilitaire pour fetch
-function fetchWithTimeout(url, options = {}, ms = 150000) {
+function fetchWithTimeout(url, options = {}, ms = OPENAI_TIMEOUT) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   return fetch(url, { ...options, signal: ctrl.signal })
@@ -202,7 +202,7 @@ export async function analyzeThemesWithOpenAI(
     method: "POST",
     headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify(body)
-  }, 60000);
+  }, OPENAI_TIMEOUT);
   
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
