@@ -237,11 +237,40 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "s3:GetEncryptionConfiguration",
           "s3:GetBucketObjectLockConfiguration",
           "s3:GetBucketTagging",
-          "s3:PutBucketPolicy"
+          "s3:PutBucketPolicy",
+          "s3:CreateBucket",
+          "s3:ListAllMyBuckets",
+          "s3:GetBucketLocation",
+          "s3:PutBucketPublicAccessBlock"
         ],
         Resource = "*"
       },
-
+      ### --- ACM ---
+      { 
+        "Sid": "ACMRequestAndRead",
+        "Effect": "Allow",
+        "Action": [
+          "acm:RequestCertificate",
+          "acm:DescribeCertificate",
+          "acm:ListCertificates",
+          "acm:ListTagsForCertificate",
+          "acm:AddTagsToCertificate"
+        ],
+        "Resource": "*"
+      },
+      ### --- Route53 ---
+      {
+        "Sid": "Route53ForDNSValidation",
+        "Effect": "Allow",
+        "Action": [
+          "route53:ChangeResourceRecordSets",
+          "route53:ListHostedZonesByName",
+          "route53:GetHostedZone",
+          "route53:ListResourceRecordSets",
+          "route53:GetChange"
+        ],
+        "Resource": "*"
+      },
       ### --- COGNITO ---
       {
         Sid    = "CognitoAccess",
