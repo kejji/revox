@@ -89,7 +89,8 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "iam:GetRole",
           "iam:CreatePolicy",
           "iam:ListAttachedUserPolicies",
-          "iam:AttachUserPolicy"
+          "iam:AttachUserPolicy",
+          "iam:CreatePolicyVersion"
         ],
         Resource = "*"
       },
@@ -131,7 +132,8 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "lambda:UpdateEventSourceMapping",
           "lambda:GetEventSourceMapping",
           "lambda:ListEventSourceMappings",
-          "lambda:DeleteEventSourceMapping"        ],
+          "lambda:DeleteEventSourceMapping"        
+          ],
         Resource = "*"
       },
 
@@ -302,7 +304,20 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "events:ListRules"
         ],
         Resource = "*"
-      }
+      },
+
+      ### --- Cloud front ---
+      {
+        "Sid": "InvalidateSpecificDistribution",
+        "Effect": "Allow",
+        "Action": [
+          "cloudfront:CreateInvalidation",
+          "cloudfront:GetInvalidation",
+          "cloudfront:ListInvalidations",
+          "cloudfront:GetDistribution"
+        ],
+        "Resource": "*"
+      }      
     ]
   })
 }
