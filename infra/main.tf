@@ -417,15 +417,6 @@ resource "aws_lambda_permission" "allow_apigw" {
 }
 
 ########################################
-# Function URL pour invoquer directement Lambda 
-########################################
-resource "aws_lambda_function_url" "api_url" {
-  function_name      = aws_lambda_function.api.function_name
-  authorization_type = "NONE"
-}
-
-
-########################################
 #  Ressource gérant la Lambda Express
 ########################################
 resource "aws_lambda_function" "api" {
