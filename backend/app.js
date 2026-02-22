@@ -2,7 +2,7 @@
 import dotenv from "dotenv/config";
 import express from "express";
 import cors from "cors";
-import decodeJwtSub from "./auth.js";
+import { requireAuth } from "./auth.js";
 import { searchApp } from "./searchApp.js";
 import { listReviews } from "./reviews.js";
 import { exportReviewsCsv } from "./reviewsExport.js";
@@ -53,7 +53,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
-app.use(decodeJwtSub);
+app.use(requireAuth);
 
 app.get("/health", (_, res) => res.send({ status: "OK" }));
 
