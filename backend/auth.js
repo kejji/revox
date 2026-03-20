@@ -1,17 +1,9 @@
 import { CognitoJwtVerifier } from "aws-jwt-verify";
-import dotenv from "dotenv";
-dotenv.config();
-
-const userPoolId = process.env.COGNITO_USER_POOL_ID;
-const clientId = process.env.COGNITO_APP_CLIENT_ID;
-
-console.log("COGNITO_USER_POOL_ID:", userPoolId);
-console.log("COGNITO_APP_CLIENT_ID:", clientId);
 
 const verifier = CognitoJwtVerifier.create({
-  userPoolId,
+  userPoolId: process.env.COGNITO_USER_POOL_ID,
   tokenUse: "access",
-  clientId,
+  clientId: process.env.COGNITO_APP_CLIENT_ID,
 });
 
 export async function requireAuth(req, res, next) {
