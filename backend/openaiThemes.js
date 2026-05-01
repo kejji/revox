@@ -2,11 +2,11 @@
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 
 // --- Config OpenAI ---
-const OPENAI_URL   = process.env.OPENAI_URL;
+const OPENAI_URL = process.env.OPENAI_URL;
 const OPENAI_MODEL = process.env.OPENAI_MODEL;
-let OPENAI_KEY   = process.env.OPENAI_API_KEY;
+let OPENAI_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_TIMEOUT = 150000; // 150s
-// Timeout utilitaire pour fetch
+
 function fetchWithTimeout(url, options = {}, ms = OPENAI_TIMEOUT) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -16,20 +16,24 @@ function fetchWithTimeout(url, options = {}, ms = OPENAI_TIMEOUT) {
 
 async function ensureOpenAIKey() {
   if (OPENAI_KEY) return OPENAI_KEY;
+
   const secretName = process.env.OPENAI_SECRET_NAME;
   if (!secretName) throw new Error("OPENAI_SECRET_NAME is missing");
+
   const sm = new SecretsManagerClient({});
   const out = await sm.send(new GetSecretValueCommand({ SecretId: secretName }));
-  // supporte soit secretString brut, soit JSON { api_key: "..." }
   const raw = out.SecretString || "";
+
   try {
     const parsed = JSON.parse(raw);
     OPENAI_KEY = parsed.api_key || parsed.key || parsed.OPENAI_API_KEY || raw;
   } catch {
     OPENAI_KEY = raw;
   }
+
   if (!OPENAI_KEY) throw new Error("OpenAI key not found in secret");
-  process.env.OPENAI_API_KEY = OPENAI_KEY; // utile pour les autres modules
+
+  process.env.OPENAI_API_KEY = OPENAI_KEY;
   return OPENAI_KEY;
 }
 
@@ -47,25 +51,78 @@ function toAxisId(label) {
     .replace(/\s+/g, "_");
 }
 
+function toIsoDate(value) {
+  if (!value) return null;
+
+  const raw = String(value).trim();
+
+  // Si déjà ISO valide
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toISOString();
+  }
+
+  // Fallback si format "YYYY-MM-DD HH:mm:ss"
+  const normalized = raw.replace(" ", "T");
+  const d2 = new Date(normalized);
+  if (!Number.isNaN(d2.getTime())) {
+    return d2.toISOString();
+  }
+
+  return raw;
+}
+
+function normalizeExample(ex = {}) {
+  const rawDate =
+    ex.date ||
+    ex.datetime ||
+    ex.created_at ||
+    ex.createdAt ||
+    ex.review_date ||
+    ex.reviewDate ||
+    ex.updated ||
+    "";
+
+  return {
+    date: toIsoDate(rawDate),
+    platform:
+      ex.platform ||
+      ex.store ||
+      ex.source ||
+      ex.os ||
+      null,
+    rating: toNum(ex.rating),
+    text: truncate(String(ex.text || "").replace(/\s+/g, " ").trim(), 240),
+    user_name:
+      ex.user_name ||
+      ex.username ||
+      ex.userName ||
+      ex.author ||
+      ex.authorName ||
+      ex.user ||
+      ex.name ||
+      null,
+  };
+}
+
 function dedupeExamples(arr) {
   const seen = new Set();
   const out = [];
 
   for (const ex of (arr || [])) {
-    const rawDate = ex?.date || ex?.datetime || ex?.created_at || ex?.review_date || "";
+    const normalized = normalizeExample(ex);
 
-    const key = `${rawDate}|${ex?.platform || ""}|${ex?.rating ?? ""}|${ex?.user_name || ""}|${ex?.text || ""}`;
+    const key = [
+      normalized.date || "",
+      normalized.platform || "",
+      normalized.rating ?? "",
+      normalized.user_name || "",
+      normalized.text || ""
+    ].join("|");
 
-    if (!seen.has(key) && ex?.text) {
+    if (!seen.has(key) && normalized.text) {
       seen.add(key);
-
-      out.push({
-        date: rawDate ? String(rawDate).slice(0, 16) : "",
-        platform: ex.platform || null,
-        rating: toNum(ex.rating),
-        text: truncate(String(ex.text).replace(/\s+/g, " ").trim(), 240),
-        user_name: ex.user_name || ex.username || ex.userName || ex.author || null,
-      });
+      out.push(normalized);
     }
   }
 
@@ -75,22 +132,18 @@ function dedupeExamples(arr) {
 // --- Prompt builder ---
 function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, rows) {
   const lines = rows.map(r => {
-    const rawDate = r.date || r.datetime || r.created_at || r.review_date || "";
-    const dateWithTime = rawDate ? String(rawDate).slice(0, 16) : "";
+    const ex = normalizeExample({
+      ...r,
+      text: truncate((r.text || "").replace(/\s+/g, " ").trim(), 600),
+    });
 
-    const txt = truncate((r.text || "").replace(/\s+/g, " ").trim(), 600);
-    const rating = r.rating != null ? r.rating : "";
-
-    const platform = r.platform || "";
-    const userName = r.user_name || r.username || r.userName || r.author || "";
-
-    return [
-      `date=${dateWithTime}`,
-      `platform=${platform}`,
-      `rating=${rating}`,
-      `user_name=${userName}`,
-      `text=${txt}`
-    ].join(" | ");
+    return JSON.stringify({
+      date: ex.date,
+      platform: ex.platform,
+      rating: ex.rating,
+      user_name: ex.user_name,
+      text: ex.text,
+    });
   }).join("\n");
 
   return [
@@ -100,9 +153,11 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
         "Tu es un analyste VOC multilingue.",
         "Objectif: extraire des AXES (thèmes) clairs et actionnables + top 3 NEG & top 3 POS.",
         `Polarité: note <= ${negCutoff} = négatif, note >= ${posCutoff} = positif; sinon infère le ton du texte.`,
-        "Labels: courts et concrets (ex: “Affichage tardif des transactions”, “Problèmes de connexion et authentification”, “Notifications intempestives”).",
+        "Labels: courts et concrets.",
         "Disjonction stricte: un axe ne doit JAMAIS être à la fois en négatif et en positif.",
-        "Retourne TOUS les exemples pertinents pour chaque axe (pas limité à 3).",
+        "Retourne TOUS les exemples pertinents pour chaque axe, sans limite à 3.",
+        "Chaque exemple doit conserver exactement ces champs si disponibles: date, platform, rating, text, user_name.",
+        "Le champ date doit rester au format ISO complet avec fuseau horaire, exemple: 2026-04-29T20:55:56.000Z.",
         "Réponds STRICTEMENT en JSON conforme au schéma fourni."
       ].join(" ")
     },
@@ -113,7 +168,7 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
         `Fenêtre: ${from || "?"} → ${to || "?"}`,
         `Apps: ${(appPks || []).join(", ") || "n/a"}`,
         "",
-        "Reviews (une par ligne) :",
+        "Reviews JSONL, une review par ligne :",
         lines,
         "",
         "JSON attendu:",
@@ -125,11 +180,11 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
               avg_rating: 0,
               examples: [
                 {
-                  date: "YYYY-MM-DD HH:mm",
+                  date: "2026-04-29T20:55:56.000Z",
                   platform: "ios|android",
                   rating: 1,
-                  user_name: "string",
-                  text: "..."
+                  text: "...",
+                  user_name: "string"
                 }
               ]
             }
@@ -141,11 +196,11 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
               avg_rating: 0,
               examples: [
                 {
-                  date: "YYYY-MM-DD HH:mm",
+                  date: "2026-04-29T20:55:56.000Z",
                   platform: "ios|android",
                   rating: 5,
-                  user_name: "string",
-                  text: "..."
+                  text: "...",
+                  user_name: "string"
                 }
               ]
             }
@@ -157,12 +212,28 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
               positive: {
                 count: 0,
                 avg_rating: 0,
-                examples: []
+                examples: [
+                  {
+                    date: "2026-04-29T20:55:56.000Z",
+                    platform: "ios|android",
+                    rating: 5,
+                    text: "...",
+                    user_name: "string"
+                  }
+                ]
               },
               negative: {
                 count: 0,
                 avg_rating: 0,
-                examples: []
+                examples: [
+                  {
+                    date: "2026-04-29T20:55:56.000Z",
+                    platform: "ios|android",
+                    rating: 1,
+                    text: "...",
+                    user_name: "string"
+                  }
+                ]
               }
             }
           ]
@@ -175,7 +246,7 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
   ];
 }
 
-// --- Disjonction POS/NEG (par id) ---
+// --- Disjonction POS/NEG ---
 function enforceDisjoint(out) {
   const toId = (x) => toAxisId(x?.axis_label || "");
   const negIds = new Set((out.top_negative_axes || []).map(x => toId(x)));
@@ -236,10 +307,12 @@ export async function analyzeThemesWithOpenAI(
   reviews
 ) {
   await ensureOpenAIKey();
+
   if (!OPENAI_KEY) throw new Error("OPENAI_API_KEY is missing");
   if (!reviews?.length) return { top_negative_axes: [], top_positive_axes: [], axes: [] };
 
-  // Ici on passe TOUS les reviews (plus d’échantillonnage ni MAX_REVIEWS)
+  console.log("[Themes] sample review", JSON.stringify(reviews[0], null, 2));
+
   const messages = buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, reviews);
 
   const body = {
@@ -250,13 +323,17 @@ export async function analyzeThemesWithOpenAI(
   };
 
   console.log("[OpenAI] call", { url: OPENAI_URL, model: OPENAI_MODEL, msgs: messages.length });
-  console.log("key prefix", OPENAI_KEY.slice(0,7))
+  console.log("key prefix", OPENAI_KEY.slice(0, 7));
+
   const resp = await fetchWithTimeout(OPENAI_URL, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
+    headers: {
+      "Authorization": `Bearer ${OPENAI_KEY}`,
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify(body)
   }, OPENAI_TIMEOUT);
-  
+
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
     throw new Error(`OpenAI API error ${resp.status}: ${txt}`);
