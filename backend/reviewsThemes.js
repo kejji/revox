@@ -14,27 +14,42 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }), 
 
 const toNum = (x) => (Number.isFinite(+x) ? +x : null);
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : (s || ""));
-const makeSKBounds = (fromISO, toISO) => ({ lo: `${fromISO}#\u0000`, hi: `${toISO}#\uFFFF` });
+const makeSKBounds = (fromISO, toISO) => ({
+  lo: `${fromISO}#\u0000`,
+  hi: `${toISO}#\uFFFF`,
+});
+
+function mapReviewItem(it) {
+  return {
+    app_pk: it.app_pk,
+    date: it.date || (it.ts_review ? String(it.ts_review).split("#")[0] : null),
+    platform: it.platform || null,
+    rating: toNum(it.rating),
+    text: truncate(it.text || "", 3000),
+    user_name: it.user_name || null,
+  };
+}
 
 /**
  * Query par plage de dates (utilisé pour from/to)
  */
 async function fetchReviewsRange(appPk, fromISO, toISO, limit = 1500) {
   const { lo, hi } = makeSKBounds(fromISO, toISO);
+
   const cmd = new QueryCommand({
     TableName: REVIEWS_TABLE,
     KeyConditionExpression: "app_pk = :pk AND ts_review BETWEEN :lo AND :hi",
-    ExpressionAttributeValues: { ":pk": appPk, ":lo": lo, ":hi": hi },
+    ExpressionAttributeValues: {
+      ":pk": appPk,
+      ":lo": lo,
+      ":hi": hi,
+    },
     ScanIndexForward: false,
     Limit: limit,
   });
+
   const out = await ddb.send(cmd);
-  return (out.Items || []).map((it) => ({
-    app_pk: it.app_pk,
-    date: it.date || (it.ts_review ? String(it.ts_review).split("#")[0] : null),
-    rating: toNum(it.rating),
-    text: truncate(it.text || "", 3000),
-  }));
+  return (out.Items || []).map(mapReviewItem);
 }
 
 /**
@@ -44,17 +59,15 @@ async function fetchReviewsLatest(appPk, count) {
   const cmd = new QueryCommand({
     TableName: REVIEWS_TABLE,
     KeyConditionExpression: "app_pk = :pk",
-    ExpressionAttributeValues: { ":pk": appPk },
+    ExpressionAttributeValues: {
+      ":pk": appPk,
+    },
     ScanIndexForward: false,
     Limit: count,
   });
+
   const out = await ddb.send(cmd);
-  return (out.Items || []).map((it) => ({
-    app_pk: it.app_pk,
-    date: it.date || (it.ts_review ? String(it.ts_review).split("#")[0] : null),
-    rating: toNum(it.rating),
-    text: truncate(it.text || "", 3000),
-  }));
+  return (out.Items || []).map(mapReviewItem);
 }
 
 export default { fetchReviewsRange, fetchReviewsLatest };
