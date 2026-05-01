@@ -60,7 +60,6 @@ function dedupeExamples(arr) {
         text: truncate(String(ex.text).replace(/\s+/g, " ").trim(), 240),
       });
     }
-    if (out.length >= 3) break; // max 3 exemples par axe
   }
   return out;
 }
@@ -79,7 +78,7 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
       role: "system",
       content: [
         "Tu es un analyste VOC multilingue.",
-        "Objectif: extraire des AXES (thèmes) clairs et actionnables + top 3 NEG & top 3 POS.",
+        "Objectif: extraire des AXES (thèmes) clairs et actionnables + top 3 NEG & top 3 POS, avec tous les exemples pertinents pour chaque axe.",
         `Polarité: note <= ${negCutoff} = négatif, note >= ${posCutoff} = positif; sinon infère le ton du texte.`,
         "Labels: courts et concrets (ex: “Affichage tardif des transactions”, “Problèmes de connexion et authentification”, “Notifications intempestives”).",
         "Disjonction stricte: un axe ne doit JAMAIS être à la fois en négatif et en positif.",
@@ -115,7 +114,7 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
         }, null, 2),
         "",
         `Contraintes: top_negative_axes=${topN}, top_positive_axes=${topN}, axes=breakdown complet.`,
-        "Fusionne les synonymes sous UN même axe; aucun doublon d’exemples."
+        "Fusionne les synonymes sous UN même axe; aucun doublon d’exemples; retourne tous les exemples pertinents pour chaque axe, sans te limiter à 3."
       ].join("\n")
     }
   ];
