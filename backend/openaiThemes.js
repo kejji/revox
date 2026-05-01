@@ -50,27 +50,47 @@ function toAxisId(label) {
 function dedupeExamples(arr) {
   const seen = new Set();
   const out = [];
+
   for (const ex of (arr || [])) {
-    const key = `${ex?.date || ""}|${ex?.rating ?? ""}|${ex?.text || ""}`;
+    const rawDate = ex?.date || ex?.datetime || ex?.created_at || ex?.review_date || "";
+
+    const key = `${rawDate}|${ex?.platform || ""}|${ex?.rating ?? ""}|${ex?.user_name || ""}|${ex?.text || ""}`;
+
     if (!seen.has(key) && ex?.text) {
       seen.add(key);
+
       out.push({
-        date: (ex.date || "").slice(0, 10),
+        date: rawDate ? String(rawDate).slice(0, 16) : "",
+        platform: ex.platform || null,
         rating: toNum(ex.rating),
         text: truncate(String(ex.text).replace(/\s+/g, " ").trim(), 240),
+        user_name: ex.user_name || ex.username || ex.userName || ex.author || null,
       });
     }
   }
+
   return out;
 }
 
 // --- Prompt builder ---
 function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, rows) {
   const lines = rows.map(r => {
+    const rawDate = r.date || r.datetime || r.created_at || r.review_date || "";
+    const dateWithTime = rawDate ? String(rawDate).slice(0, 16) : "";
+
     const txt = truncate((r.text || "").replace(/\s+/g, " ").trim(), 600);
-    const d = (r.date || "").slice(0, 10);
     const rating = r.rating != null ? r.rating : "";
-    return `${d} | ${rating}★ | ${txt}`;
+
+    const platform = r.platform || "";
+    const userName = r.user_name || r.username || r.userName || r.author || "";
+
+    return [
+      `date=${dateWithTime}`,
+      `platform=${platform}`,
+      `rating=${rating}`,
+      `user_name=${userName}`,
+      `text=${txt}`
+    ].join(" | ");
   }).join("\n");
 
   return [
@@ -78,10 +98,11 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
       role: "system",
       content: [
         "Tu es un analyste VOC multilingue.",
-        "Objectif: extraire des AXES (thèmes) clairs et actionnables + top 3 NEG & top 3 POS, avec tous les exemples pertinents pour chaque axe.",
+        "Objectif: extraire des AXES (thèmes) clairs et actionnables + top 3 NEG & top 3 POS.",
         `Polarité: note <= ${negCutoff} = négatif, note >= ${posCutoff} = positif; sinon infère le ton du texte.`,
         "Labels: courts et concrets (ex: “Affichage tardif des transactions”, “Problèmes de connexion et authentification”, “Notifications intempestives”).",
         "Disjonction stricte: un axe ne doit JAMAIS être à la fois en négatif et en positif.",
+        "Retourne TOUS les exemples pertinents pour chaque axe (pas limité à 3).",
         "Réponds STRICTEMENT en JSON conforme au schéma fourni."
       ].join(" ")
     },
@@ -92,29 +113,63 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
         `Fenêtre: ${from || "?"} → ${to || "?"}`,
         `Apps: ${(appPks || []).join(", ") || "n/a"}`,
         "",
-        "Reviews (une par ligne: date | note★ | texte) :",
+        "Reviews (une par ligne) :",
         lines,
         "",
         "JSON attendu:",
         JSON.stringify({
           top_negative_axes: [
-            { axis_label: "string", count: 0, avg_rating: 0, examples: [{ date: "YYYY-MM-DD", rating: 1, text: "..." }] }
+            {
+              axis_label: "string",
+              count: 0,
+              avg_rating: 0,
+              examples: [
+                {
+                  date: "YYYY-MM-DD HH:mm",
+                  platform: "ios|android",
+                  rating: 1,
+                  user_name: "string",
+                  text: "..."
+                }
+              ]
+            }
           ],
           top_positive_axes: [
-            { axis_label: "string", count: 0, avg_rating: 0, examples: [{ date: "YYYY-MM-DD", rating: 5, text: "..." }] }
+            {
+              axis_label: "string",
+              count: 0,
+              avg_rating: 0,
+              examples: [
+                {
+                  date: "YYYY-MM-DD HH:mm",
+                  platform: "ios|android",
+                  rating: 5,
+                  user_name: "string",
+                  text: "..."
+                }
+              ]
+            }
           ],
           axes: [
             {
               axis_label: "string",
               total_reviews: 0,
-              positive: { count: 0, avg_rating: 0, examples: [] },
-              negative: { count: 0, avg_rating: 0, examples: [] }
+              positive: {
+                count: 0,
+                avg_rating: 0,
+                examples: []
+              },
+              negative: {
+                count: 0,
+                avg_rating: 0,
+                examples: []
+              }
             }
           ]
         }, null, 2),
         "",
         `Contraintes: top_negative_axes=${topN}, top_positive_axes=${topN}, axes=breakdown complet.`,
-        "Fusionne les synonymes sous UN même axe; aucun doublon d’exemples; retourne tous les exemples pertinents pour chaque axe, sans te limiter à 3."
+        "Fusionne les synonymes sous UN même axe; aucun doublon d’exemples; retourne tous les exemples disponibles."
       ].join("\n")
     }
   ];
