@@ -83,7 +83,6 @@ function buildPrompt({ appPks, from, to, lang, posCutoff, negCutoff, topN }, row
         `Polarité: note <= ${negCutoff} = négatif, note >= ${posCutoff} = positif; sinon infère le ton du texte.`,
         "Labels: courts et concrets (ex: “Affichage tardif des transactions”, “Problèmes de connexion et authentification”, “Notifications intempestives”).",
         "Disjonction stricte: un axe ne doit JAMAIS être à la fois en négatif et en positif.",
-        "Exemples: max 3 par axe, distincts, concis.",
         "Réponds STRICTEMENT en JSON conforme au schéma fourni."
       ].join(" ")
     },
