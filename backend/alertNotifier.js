@@ -49,14 +49,14 @@ export async function handler(event) {
 function buildEmailText(message) {
   const criteria = [];
 
-  if (message.criteria?.triggerOnNewReview) criteria.push("nouveau commentaire");
+  if (message.criteria?.triggerOnNewReview) criteria.push("new review");
 
   if (message.criteria?.maxRating !== null && message.criteria?.maxRating !== undefined) {
-    criteria.push(`note <= ${message.criteria.maxRating}`);
+    criteria.push(`rating <= ${message.criteria.maxRating}`);
   }
 
   if (message.criteria?.keywords?.length) {
-    criteria.push(`mots-clés: ${message.criteria.keywords.join(", ")}`);
+    criteria.push(`keywords: ${message.criteria.keywords.join(", ")}`);
   }
 
   const reviewsText = (message.reviews || [])
@@ -76,7 +76,7 @@ function buildEmailText(message) {
   return [
     "Hello,",
     "",
-    `${message.reviews.length} new comment(s) match your Revox alert.`,
+    `${message.reviews.length} new review(s) match your Revox alert.`,
     "",
     `Application: ${message.appName || message.bundleId}`,
     `Platform: ${message.platform}`,
