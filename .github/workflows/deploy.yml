@@ -50,10 +50,12 @@ jobs:
 
       - name: Bundle themesScheduleRunner
         run: npx esbuild themesScheduleRunner.js --bundle --platform=node --target=node18 --outfile=../themesScheduleRunner.js
+        
+      - name: Bundle alertNotifier
+        run: npx esbuild alertNotifier.js --bundle --platform=node --target=node18 --outfile=../alertNotifier.js
 
       - name: Package bundle into zip
-        run: zip revox-backend.zip index.js worker.js userSync.js ingestScheduler.js themesWorker.js themesScheduleRunner.js
-        working-directory: .
+        run: zip revox-backend.zip index.js worker.js userSync.js ingestScheduler.js themesWorker.js themesScheduleRunner.js alertNotifier.js
 
       - name: Debug zip content
         run: unzip -l revox-backend.zip
@@ -74,5 +76,5 @@ jobs:
           aws lambda update-function-code --function-name revox-ingest-scheduler --zip-file fileb://revox-backend.zip --region eu-west-3
           aws lambda update-function-code --function-name revox-themes-worker    --zip-file fileb://revox-backend.zip --region eu-west-3
           aws lambda update-function-code --function-name revox-themes-scheduler --zip-file fileb://revox-backend.zip --region eu-west-3
-
+          aws lambda update-function-code --function-name revox-alert-notifier   --zip-file fileb://revox-backend.zip --region eu-west-3
         working-directory: .
