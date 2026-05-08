@@ -189,7 +189,7 @@ resource "aws_dynamodb_table" "apps_metadata" {
     type = "S"
   }
 
-   tags = {
+  tags = {
     Name = "Revox Apps Metadata"
   }
 }
@@ -204,26 +204,26 @@ resource "aws_dynamodb_table" "apps_ingest_schedule" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "app_pk"
 
-  attribute { 
+  attribute {
     name = "app_pk"
-    type = "S" 
+    type = "S"
   }
 
-  attribute { 
+  attribute {
     name = "due_pk"
-    type = "S" 
+    type = "S"
   }
 
-  attribute { 
+  attribute {
     name = "next_run_at"
-    type = "N" 
+    type = "N"
   }
-  
+
   global_secondary_index {
-    name               = "gsi_due"
-    hash_key           = "due_pk"
-    range_key          = "next_run_at"
-    projection_type    = "ALL"
+    name            = "gsi_due"
+    hash_key        = "due_pk"
+    range_key       = "next_run_at"
+    projection_type = "ALL"
   }
 
   tags = {
@@ -241,14 +241,14 @@ resource "aws_dynamodb_table" "apps_themes" {
   hash_key     = "app_pk"
   range_key    = "sk"
 
-  attribute { 
+  attribute {
     name = "app_pk"
-    type = "S" 
+    type = "S"
   }
 
-  attribute { 
-    name = "sk"     
-    type = "S" 
+  attribute {
+    name = "sk"
+    type = "S"
   }
 
   tags = { Name = "Theme summaries per app/day" }
@@ -263,29 +263,67 @@ resource "aws_dynamodb_table" "apps_themes_schedule" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "app_pk"
 
-  attribute { 
-    name = "app_pk"    
-    type = "S" 
-  }
-  
-  attribute { 
-    name = "due_pk"    
-    type = "S" 
+  attribute {
+    name = "app_pk"
+    type = "S"
   }
 
-  attribute { 
-    name = "next_run_at" 
-    type = "N" 
+  attribute {
+    name = "due_pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "next_run_at"
+    type = "N"
   }
 
   global_secondary_index {
-    name               = "gsi_due"
-    hash_key           = "due_pk"
-    range_key          = "next_run_at"
-    projection_type    = "ALL"
+    name            = "gsi_due"
+    hash_key        = "due_pk"
+    range_key       = "next_run_at"
+    projection_type = "ALL"
   }
 
   tags = { Name = "Revox Themes Schedule" }
+}
+
+########################################
+# Table DynamoDB : ALERTS
+########################################
+
+resource "aws_dynamodb_table" "alerts" {
+  name         = "revox_alerts"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key  = "user_id"
+  range_key = "alert_id"
+
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "alert_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "app_pk"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "GSI_AppAlerts"
+    hash_key        = "app_pk"
+    range_key       = "alert_id"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "Revox Alerts"
+  }
 }
 
 ########################################
@@ -308,7 +346,7 @@ resource "aws_lambda_event_source_mapping" "worker_sqs" {
 # SQS : queue pour l'analyse des thèmes
 ########################################
 resource "aws_sqs_queue" "themes_queue" {
-  name                      = "revox-themes-queue"
+  name                       = "revox-themes-queue"
   visibility_timeout_seconds = 180
   message_retention_seconds  = 1209600
 }
@@ -322,6 +360,23 @@ resource "aws_lambda_event_source_mapping" "themes_sqs_to_lambda" {
 }
 
 ########################################
+# SQS : queue pour les notifications d’alertes
+########################################
+
+resource "aws_sqs_queue" "alerts_queue" {
+  name                       = "revox-alerts-queue"
+  visibility_timeout_seconds = 180
+  message_retention_seconds  = 1209600
+}
+
+resource "aws_lambda_event_source_mapping" "alerts_sqs_to_lambda" {
+  event_source_arn = aws_sqs_queue.alerts_queue.arn
+  function_name    = aws_lambda_function.alert_notifier.arn
+  batch_size       = 5
+  enabled          = true
+}
+
+########################################
 # API Gateway
 ########################################
 
@@ -330,17 +385,17 @@ resource "aws_apigatewayv2_api" "http_api" {
   name          = "revox-api"
   protocol_type = "HTTP"
   cors_configuration {
-    allow_origins = ["http://localhost:8080", 
-                      "https://lovable.dev", 
-                      "https://preview--revox-frontend.lovable.app", 
-                      "https://lovable.app", 
-                      "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.lovableproject.com",
-                      "https://id-preview--c9a1ce22-5aa0-4154-9698-a80bfd723859.lovable.app",
-                      "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev",
-                      "https://gptengineer-revox-83bd2a.lovable.app",
-                      "https://revogate.fr",
-                      "https://www.revogate.fr"
-                    ]
+    allow_origins = ["http://localhost:8080",
+      "https://lovable.dev",
+      "https://preview--revox-frontend.lovable.app",
+      "https://lovable.app",
+      "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.lovableproject.com",
+      "https://id-preview--c9a1ce22-5aa0-4154-9698-a80bfd723859.lovable.app",
+      "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev",
+      "https://gptengineer-revox-83bd2a.lovable.app",
+      "https://revogate.fr",
+      "https://www.revogate.fr"
+    ]
     allow_methods = ["GET", "POST", "DELETE", "OPTIONS", "PUT"]
     allow_headers = ["Authorization", "Content-Type"]
     max_age       = 600
@@ -444,6 +499,7 @@ resource "aws_lambda_function" "api" {
       APPS_THEMES_SCHEDULE_TABLE      = aws_dynamodb_table.apps_themes_schedule.name
       THEMES_DEFAULT_INTERVAL_MINUTES = var.themes_default_interval_minutes
       THEMES_SCHEDULER_FUNCTION_NAME  = aws_lambda_function.themes_scheduler.function_name
+      ALERTS_TABLE                    = aws_dynamodb_table.alerts.name
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
@@ -473,7 +529,8 @@ resource "aws_lambda_function" "worker" {
       APP_REVIEWS_TABLE   = aws_dynamodb_table.app_reviews.name
       APPS_METADATA_TABLE = aws_dynamodb_table.apps_metadata.name
       APPS_THEMES_TABLE   = aws_dynamodb_table.apps_themes.name
-
+      ALERTS_TABLE        = aws_dynamodb_table.alerts.name
+      ALERTS_QUEUE_URL    = aws_sqs_queue.alerts_queue.url
     }
   }
 
@@ -526,11 +583,11 @@ resource "aws_lambda_function" "ingest_scheduler" {
 
   environment {
     variables = {
-      EXTRACTION_QUEUE_URL             = aws_sqs_queue.extraction_queue.url
-      DEFAULT_INGEST_INTERVAL_MINUTES  = var.default_ingest_interval_minutes
-      APPS_INGEST_SCHEDULE_TABLE       = aws_dynamodb_table.apps_ingest_schedule.name
-      SCHED_BATCH_SIZE                 = var.sched_batch_size
-      SCHED_LOCK_MS                    = var.sched_lock_ms
+      EXTRACTION_QUEUE_URL            = aws_sqs_queue.extraction_queue.url
+      DEFAULT_INGEST_INTERVAL_MINUTES = var.default_ingest_interval_minutes
+      APPS_INGEST_SCHEDULE_TABLE      = aws_dynamodb_table.apps_ingest_schedule.name
+      SCHED_BATCH_SIZE                = var.sched_batch_size
+      SCHED_LOCK_MS                   = var.sched_lock_ms
     }
   }
 
@@ -554,12 +611,12 @@ resource "aws_lambda_function" "themes_worker" {
   timeout       = 180
   environment {
     variables = {
-      APP_REVIEWS_TABLE       = aws_dynamodb_table.app_reviews.name
-      APPS_THEMES_TABLE       = aws_dynamodb_table.apps_themes.name
-      OPENAI_URL              = var.openai_url
-      OPENAI_MODEL            = var.openai_model
-      OPENAI_SECRET_NAME      = var.openai_secret_name
-      THEMES_QUEUE_URL        = aws_sqs_queue.themes_queue.url
+      APP_REVIEWS_TABLE  = aws_dynamodb_table.app_reviews.name
+      APPS_THEMES_TABLE  = aws_dynamodb_table.apps_themes.name
+      OPENAI_URL         = var.openai_url
+      OPENAI_MODEL       = var.openai_model
+      OPENAI_SECRET_NAME = var.openai_secret_name
+      THEMES_QUEUE_URL   = aws_sqs_queue.themes_queue.url
     }
   }
 
@@ -585,17 +642,44 @@ resource "aws_lambda_function" "themes_scheduler" {
 
   environment {
     variables = {
-      APPS_THEMES_SCHEDULE_TABLE   = aws_dynamodb_table.apps_themes_schedule.name
-      THEMES_QUEUE_URL             = aws_sqs_queue.themes_queue.url
-      THEMES_SCHED_BATCH_SIZE      = 25
-      THEMES_SCHED_LOCK_MS         = 60000
+      APPS_THEMES_SCHEDULE_TABLE      = aws_dynamodb_table.apps_themes_schedule.name
+      THEMES_QUEUE_URL                = aws_sqs_queue.themes_queue.url
+      THEMES_SCHED_BATCH_SIZE         = 25
+      THEMES_SCHED_LOCK_MS            = 60000
       THEMES_DEFAULT_INTERVAL_MINUTES = 1440
     }
   }
 
-  lifecycle { ignore_changes = [ filename, source_code_hash ] }
+  lifecycle { ignore_changes = [filename, source_code_hash] }
 }
 
+########################################
+#  Ressource gérant la lambda alert notifier
+########################################
+
+resource "aws_lambda_function" "alert_notifier" {
+  function_name    = "revox-alert-notifier"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "alertNotifier.handler"
+  runtime          = "nodejs18.x"
+  timeout          = 60
+  filename         = "${path.module}/dummy.zip"
+  source_code_hash = filebase64sha256("${path.module}/dummy.zip")
+
+  environment {
+    variables = {
+      ALERTS_QUEUE_URL = aws_sqs_queue.alerts_queue.url
+      SES_FROM_EMAIL   = var.ses_from_email
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      filename,
+      source_code_hash,
+    ]
+  }
+}
 ########################################
 # CloudWatch Log Group pour les logs Lambda
 ########################################
@@ -683,6 +767,26 @@ resource "aws_iam_role_policy" "lambda_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# permissions ses pour lambda
+resource "aws_iam_role_policy" "lambda_ses_send_email" {
+  name = "lambda-ses-send-email"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ses:SendEmail",
+          "ses:SendRawEmail"
+        ]
         Resource = "*"
       }
     ]

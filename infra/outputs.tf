@@ -78,3 +78,15 @@ output "openai_secret_arn" {
 output "apps_themes_schedule_table_name" {
   value = trimspace(aws_dynamodb_table.apps_themes_schedule.name)
 }
+
+output "alerts_table_name" {
+  value = trimspace(aws_dynamodb_table.alerts.name)
+}
+
+output "alerts_queue_url" {
+  value = trimspace(aws_sqs_queue.alerts_queue.url)
+}
+
+output "alerts_queue_arn" {
+  value = trimspace(aws_sqs_queue.alerts_queue.arn)
+}

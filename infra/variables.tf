@@ -53,3 +53,9 @@ variable "themes_default_interval_minutes" {
   type        = number
   default     = 1440
 }
+
+variable "ses_from_email" {
+  description = "Adresse email vérifiée dans Amazon SES pour envoyer les alertes"
+  type        = string
+  default     = "noreply@revoxapp.com"
+}

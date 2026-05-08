@@ -14,6 +14,7 @@ import { enqueueThemes } from "./themesEnqueue.js";
 import { getThemesStatus } from "./themesStatus.js";
 import { getThemesResult } from "./themesResult.js";
 import { upsertThemesSchedule, getThemesSchedule, listThemesSchedules } from "./themesScheduleApi.js";
+import { createAlert, listAlerts, updateAlert, deleteAlert } from "./alerts.js";
 
 const app = express();
 
@@ -35,7 +36,7 @@ const corsOptions = {
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error("Not allowed by CORS"));
   },
-  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Authorization", "Content-Type"],
   optionsSuccessStatus: 204, // 204 pour un préflight propre
 };
@@ -45,7 +46,7 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     // Les en-têtes ci-dessous sont posés par cors(), mais on peut être redondant
     res.setHeader("Access-Control-Allow-Origin", req.headers.origin || allowedOrigins[0]);
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
     res.setHeader("Access-Control-Max-Age", "600");
     return res.sendStatus(204);
@@ -152,6 +153,26 @@ app.put("/themes/schedule", (req, res) => {
 app.get("/themes/schedule/list", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   listThemesSchedules(req, res);
+});
+
+app.post("/alerts", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  createAlert(req, res);
+});
+
+app.get("/alerts", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  listAlerts(req, res);
+});
+
+app.put("/alerts/:alertId", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  updateAlert(req, res);
+});
+
+app.delete("/alerts/:alertId", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  deleteAlert(req, res);
 });
 
 export default app;

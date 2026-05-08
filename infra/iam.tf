@@ -132,8 +132,8 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
           "lambda:UpdateEventSourceMapping",
           "lambda:GetEventSourceMapping",
           "lambda:ListEventSourceMappings",
-          "lambda:DeleteEventSourceMapping"        
-          ],
+          "lambda:DeleteEventSourceMapping"
+        ],
         Resource = "*"
       },
 
@@ -248,30 +248,30 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
         Resource = "*"
       },
       ### --- ACM ---
-      { 
-        "Sid": "ACMRequestAndRead",
-        "Effect": "Allow",
-        "Action": [
+      {
+        "Sid" : "ACMRequestAndRead",
+        "Effect" : "Allow",
+        "Action" : [
           "acm:RequestCertificate",
           "acm:DescribeCertificate",
           "acm:ListCertificates",
           "acm:ListTagsForCertificate",
           "acm:AddTagsToCertificate"
         ],
-        "Resource": "*"
+        "Resource" : "*"
       },
       ### --- Route53 ---
       {
-        "Sid": "Route53ForDNSValidation",
-        "Effect": "Allow",
-        "Action": [
+        "Sid" : "Route53ForDNSValidation",
+        "Effect" : "Allow",
+        "Action" : [
           "route53:ChangeResourceRecordSets",
           "route53:ListHostedZonesByName",
           "route53:GetHostedZone",
           "route53:ListResourceRecordSets",
           "route53:GetChange"
         ],
-        "Resource": "*"
+        "Resource" : "*"
       },
       ### --- COGNITO ---
       {
@@ -308,16 +308,16 @@ resource "aws_iam_policy" "revox_terraform_permissions" {
 
       ### --- Cloud front ---
       {
-        "Sid": "InvalidateSpecificDistribution",
-        "Effect": "Allow",
-        "Action": [
+        "Sid" : "InvalidateSpecificDistribution",
+        "Effect" : "Allow",
+        "Action" : [
           "cloudfront:CreateInvalidation",
           "cloudfront:GetInvalidation",
           "cloudfront:ListInvalidations",
           "cloudfront:GetDistribution"
         ],
-        "Resource": "*"
-      }      
+        "Resource" : "*"
+      }
     ]
   })
 }
@@ -342,10 +342,10 @@ resource "aws_iam_user_policy" "terraform_user_read_openai_secret" {
     Version = "2012-10-17",
     Statement = [
       {
-        "Effect": "Allow",
-        "Action": [ "secretsmanager:GetSecretValue" ],
+        "Effect" : "Allow",
+        "Action" : ["secretsmanager:GetSecretValue"],
         # l'ARN exact du secret, avec wildcard pour le suffixe généré par AWS
-        "Resource": "${data.aws_secretsmanager_secret.openai.arn}*"
+        "Resource" : "${data.aws_secretsmanager_secret.openai.arn}*"
       }
     ]
   })
@@ -374,16 +374,16 @@ resource "aws_iam_policy" "lambda_invoke_revox_themes" {
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Sid    = "InvokeSpecificFunction",
-      Effect = "Allow",
-      Action = ["lambda:InvokeFunction"],
+      Sid      = "InvokeSpecificFunction",
+      Effect   = "Allow",
+      Action   = ["lambda:InvokeFunction"],
       Resource = "*"
     }]
   })
 }
 
 resource "aws_iam_user_policy_attachment" "terraform_user_invoke_revox_themes" {
-  user = aws_iam_user.terraform_user.name
+  user       = aws_iam_user.terraform_user.name
   policy_arn = aws_iam_policy.lambda_invoke_revox_themes.arn
 }
 
@@ -394,15 +394,15 @@ resource "aws_iam_user_policy" "terraform_user_iam_readonly_inline" {
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Effect: "Allow",
-      Action: [
+      Effect : "Allow",
+      Action : [
         "iam:GetUser",
         "iam:ListUserPolicies",
         "iam:ListAttachedUserPolicies",
         "iam:GetPolicy",
         "iam:GetPolicyVersion"
       ],
-      Resource: "*"
+      Resource : "*"
     }]
   })
 }
@@ -415,8 +415,8 @@ resource "aws_iam_user_policy" "terraform_user_invoke_revox_themes_inline" {
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Effect   = "Allow",
-      Action   = ["lambda:InvokeFunction"],
+      Effect = "Allow",
+      Action = ["lambda:InvokeFunction"],
       Resource = [
         "arn:aws:lambda:eu-west-3:588738577999:function:revox-themes-scheduler",
         "arn:aws:lambda:eu-west-3:588738577999:function:revox-themes-scheduler:*" # versions & alias
