@@ -500,6 +500,8 @@ resource "aws_lambda_function" "api" {
       THEMES_DEFAULT_INTERVAL_MINUTES = var.themes_default_interval_minutes
       THEMES_SCHEDULER_FUNCTION_NAME  = aws_lambda_function.themes_scheduler.function_name
       ALERTS_TABLE                    = aws_dynamodb_table.alerts.name
+      COGNITO_USER_POOL_ID            = aws_cognito_user_pool.revox_user_pool.id
+      COGNITO_APP_CLIENT_ID           = aws_cognito_user_pool_client.revox_app_client.id
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
