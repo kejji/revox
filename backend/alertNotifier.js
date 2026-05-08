@@ -16,7 +16,7 @@ export async function handler(event) {
   for (const record of event.Records || []) {
     const message = JSON.parse(record.body);
 
-    const subject = `Nouvelle alerte Revox — ${message.reviews.length} commentaire(s) détecté(s)`;
+    const subject = `Revox alert — ${message.reviews.length} review(s) detected`;
     const body = buildEmailText(message);
 
     await ses.send(
@@ -62,11 +62,11 @@ function buildEmailText(message) {
   const reviewsText = (message.reviews || [])
     .map((review, index) =>
       [
-        `Commentaire ${index + 1}`,
-        `Note: ${review.rating}/5`,
-        `Auteur: ${review.userName || "N/A"}`,
+        `Review ${index + 1}`,
+        `Rating: ${review.rating}/5`,
+        `Author: ${review.userName || "N/A"}`,
         `Date: ${review.date || "N/A"}`,
-        `Version app: ${review.appVersion || "N/A"}`,
+        `App version: ${review.appVersion || "N/A"}`,
         "",
         review.text || "",
       ].join("\n")
@@ -74,15 +74,15 @@ function buildEmailText(message) {
     .join("\n\n-------------------------\n\n");
 
   return [
-    "Bonjour,",
+    "Hello,",
     "",
-    `${message.reviews.length} nouveau(x) commentaire(s) correspondent à votre alerte Revox.`,
+    `${message.reviews.length} new comment(s) match your Revox alert.`,
     "",
     `Application: ${message.appName || message.bundleId}`,
-    `Plateforme: ${message.platform}`,
-    `Critères: ${criteria.join(" / ") || "N/A"}`,
+    `Platform: ${message.platform}`,
+    `Crtieria: ${criteria.join(" / ") || "N/A"}`,
     "",
-    "Commentaires:",
+    "Reviews:",
     "",
     reviewsText,
     "",
