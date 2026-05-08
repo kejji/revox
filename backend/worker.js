@@ -8,7 +8,14 @@
 // -------------------------------------------------------------------
 
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
+const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
+const {
+  DynamoDBDocumentClient,
+  PutCommand,
+  QueryCommand,
+  UpdateCommand,
+  GetCommand,
+} = require("@aws-sdk/lib-dynamodb");
 
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION || "eu-west-3";
@@ -16,13 +23,15 @@ const REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 const FIRST_RUN_DAYS = 150;
 const MAX_BACKFILL_DAYS = 30;
 const METADATA_TABLE = process.env.APPS_METADATA_TABLE;
+const ALERTS_TABLE = process.env.ALERTS_TABLE;
+const ALERTS_QUEUE_URL = process.env.ALERTS_QUEUE_URL;
 
 // ---------- Clients ----------
 const ddbDoc = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
-
+const sqs = new SQSClient({ region: REGION });
 
 // ---------- Helper ----------
 async function bumpAppReviewCounter({ platform, bundleId, inserted }) {
@@ -200,13 +209,23 @@ function toDdbItem(raw) {
 async function saveReviewToDDB(raw, { cache }) {
   const item = toDdbItem(raw);
   const cacheKey = item.ts_review;
-  if (cache && cache.has(cacheKey)) return;
-  await ddbDoc.send(new PutCommand({
-    TableName: REVIEWS_TABLE,
-    Item: item,
-    ConditionExpression: "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)"
-  }));
+
+  if (cache && cache.has(cacheKey)) {
+    return { inserted: false, item };
+  }
+
+  await ddbDoc.send(
+    new PutCommand({
+      TableName: REVIEWS_TABLE,
+      Item: item,
+      ConditionExpression:
+        "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)",
+    })
+  );
+
   cache && cache.add(cacheKey);
+
+  return { inserted: true, item };
 }
 
 // ---------- Scrapers ----------
@@ -302,13 +321,157 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
   console.log(`[INC] after-filter count=${toInsert.length} min=${toInsert[0]?.date || null} max=${toInsert.at(-1)?.date || null}`);
 
   const cache = new Set();
+  const insertedReviews = [];
   let ok = 0, dup = 0, ko = 0;
+  
   await processInBatches(toInsert, 15, async (r) => {
-    try { await saveReviewToDDB(r, { cache }); ok++; }
-    catch (e) { if (e?.name === "ConditionalCheckFailedException") dup++; else { ko++; console.error("Put error:", e?.message || e); } }
+    try {
+      const saved = await saveReviewToDDB(r, { cache });
+  
+      if (saved.inserted) {
+        ok++;
+        insertedReviews.push(saved.item);
+      }
+    } catch (e) {
+      if (e?.name === "ConditionalCheckFailedException") {
+        dup++;
+      } else {
+        ko++;
+        console.error("Put error:", e?.message || e);
+      }
+    }
   });
-  console.log(`[INC] fetched=${fetched.length} sent=${toInsert.length} inserted=${ok} ddbDups=${dup} errors=${ko}`);
-  return { fetched: fetched.length, sent: toInsert.length, inserted: ok, ddbDups: dup, errors: ko };
+  
+  await enqueueAlertNotifications({
+    platform: plat,
+    bundleId,
+    appName,
+    insertedReviews,
+  });
+  
+  console.log(
+    `[INC] fetched=${fetched.length} sent=${toInsert.length} inserted=${ok} ddbDups=${dup} errors=${ko}`
+  );
+  
+  return {
+    fetched: fetched.length,
+    sent: toInsert.length,
+    inserted: ok,
+    ddbDups: dup,
+    errors: ko,
+    alertsChecked: insertedReviews.length,
+  };
+}
+
+// ---------- Alerts ----------
+async function getActiveAlertsForApp(platform, bundleId) {
+  if (!ALERTS_TABLE) {
+    console.warn("[ALERTS] ALERTS_TABLE missing, skip");
+    return [];
+  }
+
+  const pk = appPk(platform, bundleId);
+
+  const out = await ddbDoc.send(
+    new QueryCommand({
+      TableName: ALERTS_TABLE,
+      IndexName: "GSI_AppAlerts",
+      KeyConditionExpression: "app_pk = :appPk",
+      FilterExpression: "enabled = :enabled",
+      ExpressionAttributeValues: {
+        ":appPk": pk,
+        ":enabled": true,
+      },
+    })
+  );
+
+  return out.Items || [];
+}
+
+function reviewMatchesAlert(review, alert) {
+  if (alert.trigger_on_new_review === true) return true;
+
+  const text = `${review.text || ""} ${review.user_name || ""}`.toLowerCase();
+
+  const keywordMatch =
+    Array.isArray(alert.keywords) &&
+    alert.keywords.length > 0 &&
+    alert.keywords.some((kw) => text.includes(String(kw).toLowerCase()));
+
+  const rating = Number(review.rating);
+  const ratingMatch =
+    alert.max_rating !== undefined &&
+    alert.max_rating !== null &&
+    Number.isFinite(rating) &&
+    rating <= Number(alert.max_rating);
+
+  return keywordMatch || ratingMatch;
+}
+
+function toAlertReviewPayload(review) {
+  return {
+    reviewId: review.ts_review,
+    date: review.date,
+    rating: review.rating,
+    text: review.text,
+    userName: review.user_name,
+    appVersion: review.app_version,
+    platform: review.platform,
+    bundleId: review.bundle_id,
+    appName: review.app_name,
+  };
+}
+
+async function enqueueAlertNotifications({ platform, bundleId, appName, insertedReviews }) {
+  if (!ALERTS_QUEUE_URL) {
+    console.warn("[ALERTS] ALERTS_QUEUE_URL missing, skip");
+    return;
+  }
+
+  if (!insertedReviews || insertedReviews.length === 0) return;
+
+  const alerts = await getActiveAlertsForApp(platform, bundleId);
+  if (alerts.length === 0) {
+    console.log("[ALERTS] no active alerts for app");
+    return;
+  }
+
+  for (const alert of alerts) {
+    const matchingReviews = insertedReviews.filter((review) =>
+      reviewMatchesAlert(review, alert)
+    );
+
+    if (matchingReviews.length === 0) continue;
+
+    const payload = {
+      type: "REVIEW_ALERT_MATCHED",
+      userId: alert.user_id,
+      alertId: alert.alert_id,
+      email: alert.email,
+      appPk: appPk(platform, bundleId),
+      appName,
+      platform,
+      bundleId,
+      criteria: {
+        triggerOnNewReview: alert.trigger_on_new_review === true,
+        keywords: alert.keywords || [],
+        maxRating: alert.max_rating ?? null,
+      },
+      reviews: matchingReviews.map(toAlertReviewPayload),
+      createdAt: new Date().toISOString(),
+    };
+
+    await sqs.send(
+      new SendMessageCommand({
+        QueueUrl: ALERTS_QUEUE_URL,
+        MessageBody: JSON.stringify(payload),
+      })
+    );
+
+    console.log(
+      `[ALERTS] queued alert=${alert.alert_id} email=${alert.email} reviews=${matchingReviews.length}`
+    );
+  }
 }
 
 // ---------- Handler ----------
