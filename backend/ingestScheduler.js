@@ -87,8 +87,19 @@ export const handler = async () => {
         Key: { app_pk },
         ConditionExpression:
           "(attribute_not_exists(in_flight_until) OR in_flight_until < :now) AND next_run_at <= :now",
-        UpdateExpression: "SET in_flight_until = :until",
-        ExpressionAttributeValues: { ":now": now, ":until": now + LOCK_MS },
+          UpdateExpression: `
+          SET next_run_at = :next,
+              next_run_at_iso = :nextIso,
+              last_enqueued_at = :now,
+              last_enqueued_at_iso = :nowIso
+          REMOVE in_flight_until
+        `,
+        ExpressionAttributeValues: {
+          ":next": next,
+          ":nextIso": new Date(next).toISOString(),
+          ":now": now,
+          ":nowIso": new Date(now).toISOString(),
+        },
       }));
       locked++;
       console.log(JSON.stringify({
