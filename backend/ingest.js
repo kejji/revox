@@ -31,7 +31,12 @@ export async function dispatchIncrementalIngest(req, res) {
     }));
     return res.status(202).json({ ok: true, queued: payload });
   } catch (err) {
-    console.error("Erreur dispatchIncrementalIngest:", err);
+    console.error("Erreur dispatchIncrementalIngest:", {
+      name: err?.name,
+      message: err?.message,
+      code: err?.Code,
+      stack: err?.stack,
+    });
     return res.status(500).json({ error: "Impossible d’enqueuer le job incrémental" });
   }
 }
