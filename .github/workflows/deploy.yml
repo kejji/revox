@@ -56,7 +56,8 @@ jobs:
 
       - name: Package bundle into zip
         run: zip revox-backend.zip index.js worker.js userSync.js ingestScheduler.js themesWorker.js themesScheduleRunner.js alertNotifier.js
-
+        working-directory: .
+        
       - name: Debug zip content
         run: unzip -l revox-backend.zip
         working-directory: .
