@@ -1,19 +1,22 @@
 // backend/alertNotifier.js
-const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const REGION = process.env.AWS_REGION || "eu-west-3";
 const SES_FROM_EMAIL = process.env.SES_FROM_EMAIL;
 
 const ses = new SESClient({ region: REGION });
 
-exports.handler = async (event) => {
+export async function handler(event) {
   console.log("[ALERT_NOTIFIER] records:", event.Records?.length || 0);
+
+  if (!SES_FROM_EMAIL) {
+    throw new Error("Missing required env var: SES_FROM_EMAIL");
+  }
 
   for (const record of event.Records || []) {
     const message = JSON.parse(record.body);
 
     const subject = `Nouvelle alerte Revox — ${message.reviews.length} commentaire(s) détecté(s)`;
-
     const body = buildEmailText(message);
 
     await ses.send(
@@ -37,20 +40,16 @@ exports.handler = async (event) => {
       })
     );
 
-    console.log(
-      `[ALERT_NOTIFIER] email sent to=${message.email} alert=${message.alertId}`
-    );
+    console.log(`[ALERT_NOTIFIER] email sent to=${message.email} alert=${message.alertId}`);
   }
 
   return { ok: true };
-};
+}
 
 function buildEmailText(message) {
   const criteria = [];
 
-  if (message.criteria?.triggerOnNewReview) {
-    criteria.push("nouveau commentaire");
-  }
+  if (message.criteria?.triggerOnNewReview) criteria.push("nouveau commentaire");
 
   if (message.criteria?.maxRating !== null && message.criteria?.maxRating !== undefined) {
     criteria.push(`note <= ${message.criteria.maxRating}`);
@@ -61,8 +60,8 @@ function buildEmailText(message) {
   }
 
   const reviewsText = (message.reviews || [])
-    .map((review, index) => {
-      return [
+    .map((review, index) =>
+      [
         `Commentaire ${index + 1}`,
         `Note: ${review.rating}/5`,
         `Auteur: ${review.userName || "N/A"}`,
@@ -70,8 +69,8 @@ function buildEmailText(message) {
         `Version app: ${review.appVersion || "N/A"}`,
         "",
         review.text || "",
-      ].join("\n");
-    })
+      ].join("\n")
+    )
     .join("\n\n-------------------------\n\n");
 
   return [
