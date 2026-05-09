@@ -67,7 +67,10 @@ export const handler = async () => {
 
     const app_pk = it.app_pk;
     const appName = it.appName ?? null;
-    const interval_minutes = Number.isFinite(it.interval_minutes) ? it.interval_minutes : DEFAULT_INTERVAL_MIN;
+    const interval_minutes = Number.isFinite(it.interval_minutes)
+      ? it.interval_minutes
+      : DEFAULT_INTERVAL_MIN;
+    const next = now + interval_minutes * 60 * 1000;
 
     if (it.enabled === false) { console.log(JSON.stringify({ msg: "skip.disabled", app_pk })); continue; }
 
@@ -145,7 +148,6 @@ export const handler = async () => {
 
     // 2c) Replanifie
     try {
-      const next = now + interval_minutes * 60 * 1000;
       await ddb.send(new UpdateCommand({
         TableName: TABLE,
         Key: { app_pk },
