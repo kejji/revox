@@ -80,7 +80,7 @@ function buildEmailText(message) {
     "",
     `Application: ${message.appName || message.bundleId}`,
     `Platform: ${message.platform}`,
-    `Crtieria: ${criteria.join(" / ") || "N/A"}`,
+    `Criteria: ${criteria.join(" / ") || "N/A"}`,
     "",
     "Reviews:",
     "",
