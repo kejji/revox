@@ -49,6 +49,30 @@ async function bumpAppReviewCounter({ platform, bundleId, inserted }) {
   } catch (e) {
     console.error("[COUNTER] update error:", e?.message || e);
   }
+} 
+
+// ---------- Logs ----------
+
+function log(level, event, data = {}) {
+  console.log(JSON.stringify({
+    level,
+    service: "revox-worker",
+    event,
+    timestamp: new Date().toISOString(),
+    ...data,
+  }));
+}
+
+function logInfo(event, data = {}) {
+  log("INFO", event, data);
+}
+
+function logWarn(event, data = {}) {
+  log("WARN", event, data);
+}
+
+function logError(event, data = {}) {
+  log("ERROR", event, data);
 }
 
 // ---------- Compteurs : self-heal si pré-remplissage ----------
@@ -310,16 +334,32 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
 
   const latest = await getLatestReviewItem(plat, bundleId);
   const { fromISO, toISO, reason, effectiveBackfillDays } = computeWindow(latest, backfillDays);
-  console.log(`[INC] app=${appName} plat=${plat} bundle=${bundleId} reason=${reason} backfillDays=${effectiveBackfillDays} window=${fromISO}→${toISO} latest=${latest ? latest.date : "none"}`);
-
+  logInfo("ingestion.window.computed", {
+    app_pk: appPk(plat, bundleId),
+    appName,
+    platform: plat,
+    bundleId,
+    reason,
+    effectiveBackfillDays,
+    fromISO,
+    toISO,
+    latestReviewDate: latest ? latest.date : null,
+  });
   const fetched = plat === "android"
     ? await scrapeAndroidReviews({ gplay, appName, bundleId, fromISO, toISO })
     : await scrapeIosReviews({ store, appName, bundleId, fromISO, toISO });
 
   const ordered = (fetched || []).sort((a, b) => new Date(a.date) - new Date(b.date));
   const toInsert = ordered.filter(it => isWithin(it.date, fromISO, toISO));
-  console.log(`[INC] after-filter count=${toInsert.length} min=${toInsert[0]?.date || null} max=${toInsert.at(-1)?.date || null}`);
-
+  logInfo("ingestion.reviews.filtered", {
+    app_pk: appPk(plat, bundleId),
+    appName,
+    platform: plat,
+    bundleId,
+    count: toInsert.length,
+    minReviewDate: toInsert[0]?.date || null,
+    maxReviewDate: toInsert.at(-1)?.date || null,
+  });
   const cache = new Set();
   const insertedReviews = [];
   let ok = 0, dup = 0, ko = 0;
@@ -349,9 +389,17 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
     insertedReviews,
   });
   
-  console.log(
-    `[INC] fetched=${fetched.length} sent=${toInsert.length} inserted=${ok} ddbDups=${dup} errors=${ko}`
-  );
+  logInfo("ingestion.result", {
+    app_pk: appPk(plat, bundleId),
+    appName,
+    platform: plat,
+    bundleId,
+    fetched: fetched.length,
+    sent: toInsert.length,
+    inserted: ok,
+    ddbDups: dup,
+    errors: ko,
+  });
   
   return {
     fetched: fetched.length,
@@ -504,7 +552,13 @@ exports.handler = async (event) => {
     }
     try {
       const stats = await runIncremental({ appName: resolvedName, platform, bundleId, backfillDays, gplay, store });
-      console.log("[INC] Résultat:", stats);
+      logInfo("ingestion.completed", {
+        app_pk: appPk(platform, bundleId),
+        appName: resolvedName,
+        platform,
+        bundleId,
+        ...stats,
+      });
       await bumpAppReviewCounter({ platform, bundleId, inserted: stats.inserted });
       await ensureTotalInitialized({ platform, bundleId, inserted: stats.inserted });
     } catch (e) {
