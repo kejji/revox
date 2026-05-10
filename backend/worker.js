@@ -389,23 +389,30 @@ async function getActiveAlertsForApp(platform, bundleId) {
 }
 
 function reviewMatchesAlert(review, alert) {
-  if (alert.trigger_on_new_review === true) return true;
-
   const text = `${review.text || ""} ${review.user_name || ""}`.toLowerCase();
 
+  const hasKeywords =
+    Array.isArray(alert.keywords) && alert.keywords.length > 0;
+
+  const hasMaxRating =
+    alert.max_rating !== undefined && alert.max_rating !== null;
+
   const keywordMatch =
-    Array.isArray(alert.keywords) &&
-    alert.keywords.length > 0 &&
-    alert.keywords.some((kw) => text.includes(String(kw).toLowerCase()));
+    !hasKeywords ||
+    alert.keywords.some((kw) =>
+      text.includes(String(kw).toLowerCase())
+    );
 
   const rating = Number(review.rating);
-  const ratingMatch =
-    alert.max_rating !== undefined &&
-    alert.max_rating !== null &&
-    Number.isFinite(rating) &&
-    rating <= Number(alert.max_rating);
+  const maxRating = Number(alert.max_rating);
 
-  return keywordMatch || ratingMatch;
+  const ratingMatch =
+    !hasMaxRating ||
+    (Number.isFinite(rating) &&
+      Number.isFinite(maxRating) &&
+      rating <= maxRating);
+
+  return keywordMatch && ratingMatch;
 }
 
 function toAlertReviewPayload(review) {
