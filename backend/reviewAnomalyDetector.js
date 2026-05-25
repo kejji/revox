@@ -153,7 +153,7 @@ async function sendAnomalyNotification(payload) {
   );
 }
 
-exports.detectReviewAnomaly = async function detectReviewAnomaly({
+async function detectReviewAnomaly({
   appPk,
   appName,
   platform,
@@ -196,7 +196,7 @@ exports.detectReviewAnomaly = async function detectReviewAnomaly({
       newReviews: newReviews.length,
       sampleSize,
     });
-
+  
     return {
       checked: false,
       reason: "not_enough_new_reviews",
@@ -307,4 +307,8 @@ exports.detectReviewAnomaly = async function detectReviewAnomaly({
     notified: anomalyAlerts.length,
     anomalies: anomalies.map((a) => a.type),
   };
+}
+
+module.exports = {
+  detectReviewAnomaly,
 };
