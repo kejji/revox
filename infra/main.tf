@@ -327,6 +327,25 @@ resource "aws_dynamodb_table" "alerts" {
 }
 
 ########################################
+# Table DynamoDB : ANOMALY_STATE
+########################################
+resource "aws_dynamodb_table" "anomaly_state" {
+  name         = "revox_anomaly_state"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key = "app_pk"
+
+  attribute {
+    name = "app_pk"
+    type = "S"
+  }
+
+  tags = {
+    Name = "Revox Anomaly State"
+  }
+}
+
+########################################
 # SQS : queue pour les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {
@@ -533,6 +552,7 @@ resource "aws_lambda_function" "worker" {
       APPS_THEMES_TABLE   = aws_dynamodb_table.apps_themes.name
       ALERTS_TABLE        = aws_dynamodb_table.alerts.name
       ALERTS_QUEUE_URL    = aws_sqs_queue.alerts_queue.url
+      ANOMALY_STATE_TABLE = aws_dynamodb_table.anomaly_state.name
     }
   }
 
