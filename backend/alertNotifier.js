@@ -16,8 +16,15 @@ export async function handler(event) {
   for (const record of event.Records || []) {
     const message = JSON.parse(record.body);
 
-    const subject = `Revox alert — ${message.reviews.length} review(s) detected`;
-    const body = buildEmailText(message);
+    const isAnomaly = message.type === "REVIEW_ANOMALY_DETECTED";
+
+    const subject = isAnomaly
+      ? `Revox alert — possible incident on ${message.appName || message.bundleId}`
+      : `Revox alert — ${message.reviews.length} review(s) detected`;
+    
+    const body = isAnomaly
+      ? buildAnomalyEmailText(message)
+      : buildEmailText(message);
 
     await ses.send(
       new SendEmailCommand({
@@ -85,6 +92,72 @@ function buildEmailText(message) {
     "Reviews:",
     "",
     reviewsText,
+    "",
+    "—",
+    "Revox",
+  ].join("\n");
+}
+
+function formatDuration(minutes) {
+  if (minutes === null || minutes === undefined) return "N/A";
+
+  const rounded = Math.round(minutes);
+
+  if (rounded < 60) return `${rounded} min`;
+
+  const hours = Math.round(rounded / 60);
+  if (hours < 48) return `${hours} h`;
+
+  const days = Math.round(hours / 24);
+  return `${days} day(s)`;
+}
+
+function buildAnomalyEmailText(message) {
+  const anomaliesText = (message.anomalies || [])
+    .map((a) => {
+      if (a.type === "volume_spike") {
+        return [
+          "- Abnormal review volume",
+          `  Current: ${formatDuration(a.currentDurationMinutes)} for ${message.sampleSize} reviews`,
+          `  Usual: ${formatDuration(a.baselineDurationMinutes)} for ${message.sampleSize} reviews`,
+          `  Acceleration: x${Number(a.multiplier || 0).toFixed(1)}`,
+        ].join("\n");
+      }
+
+      if (a.type === "negative_rate_increase") {
+        return [
+          "- Increase in negative reviews",
+          `  Current negative rate: ${Math.round((a.currentNegativeRate || 0) * 100)}%`,
+          `  Usual negative rate: ${Math.round((a.baselineNegativeRate || 0) * 100)}%`,
+          `  Increase: +${Math.round((a.increase || 0) * 100)} points`,
+        ].join("\n");
+      }
+
+      return `- ${a.label || a.type}`;
+    })
+    .join("\n\n");
+
+  return [
+    "Hello,",
+    "",
+    "Revox detected a possible incident on one of your monitored apps.",
+    "",
+    `Application: ${message.appName || message.bundleId}`,
+    `Platform: ${message.platform}`,
+    `Sample analyzed: ${message.sampleSize} new reviews`,
+    "",
+    "Detected anomaly:",
+    "",
+    anomaliesText || "N/A",
+    "",
+    "Baseline:",
+    `- Average reviews/day: ${Number(message.baseline?.avgReviewsPerDay || 0).toFixed(1)}`,
+    `- Usual negative rate: ${message.baseline?.negativeRatePercent ?? "N/A"}%`,
+    `- Usual time for sample: ${formatDuration(message.baseline?.durationMinutesForSample)}`,
+    "",
+    "Current:",
+    `- Current negative rate: ${message.current?.negativeRatePercent ?? "N/A"}%`,
+    `- Current time for sample: ${formatDuration(message.current?.durationMinutes)}`,
     "",
     "—",
     "Revox",

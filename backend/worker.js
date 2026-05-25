@@ -16,6 +16,7 @@ const {
   UpdateCommand,
   GetCommand,
 } = require("@aws-sdk/lib-dynamodb");
+const { detectReviewAnomaly } = require("./reviewAnomalyDetector.js");
 
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION || "eu-west-3";
@@ -388,6 +389,15 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
     appName,
     insertedReviews,
   });
+
+  if (insertedReviews.length > 0) {
+    await detectReviewAnomaly({
+      appPk: appPk(plat, bundleId),
+      appName,
+      platform: plat,
+      bundleId,
+    });
+  }
   
   logInfo("ingestion.result", {
     app_pk: appPk(plat, bundleId),
@@ -486,13 +496,18 @@ async function enqueueAlertNotifications({ platform, bundleId, appName, inserted
   if (!insertedReviews || insertedReviews.length === 0) return;
 
   const alerts = await getActiveAlertsForApp(platform, bundleId);
-  if (alerts.length === 0) {
+  
+  const reviewAlerts = alerts.filter(
+    (alert) => !alert.alert_type || alert.alert_type === "review_match"
+  );
+
+  if (reviewAlerts.length === 0) {
     console.log("[ALERTS] no active alerts for app");
     return;
   }
 
-  for (const alert of alerts) {
-    const matchingReviews = insertedReviews.filter((review) =>
+  for (const alert of reviewAlerts) {
+      const matchingReviews = insertedReviews.filter((review) =>
       reviewMatchesAlert(review, alert)
     );
 

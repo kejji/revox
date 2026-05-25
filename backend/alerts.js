@@ -32,6 +32,7 @@ function validateAlertBody(body) {
     platform,
     bundleId,
     email,
+    alertType = "review_match",
     triggerOnNewReview = false,
     keywords = [],
     maxRating,
@@ -46,7 +47,14 @@ function validateAlertBody(body) {
     return { error: "email est requis" };
   }
 
+  const normalizedAlertType = String(alertType || "review_match");
+
+  if (!["review_match", "review_anomaly"].includes(normalizedAlertType)) {
+    return { error: "alertType doit être review_match ou review_anomaly" };
+  }
+
   const cleanedKeywords = cleanKeywords(keywords);
+
   const parsedMaxRating =
     maxRating === undefined || maxRating === null || maxRating === ""
       ? null
@@ -59,7 +67,12 @@ function validateAlertBody(body) {
     return { error: "maxRating doit être compris entre 1 et 5" };
   }
 
-  if (!triggerOnNewReview && cleanedKeywords.length === 0 && parsedMaxRating === null) {
+  if (
+    normalizedAlertType === "review_match" &&
+    !triggerOnNewReview &&
+    cleanedKeywords.length === 0 &&
+    parsedMaxRating === null
+  ) {
     return {
       error:
         "Au moins un critère est requis : triggerOnNewReview, keywords ou maxRating",
@@ -68,6 +81,7 @@ function validateAlertBody(body) {
 
   return {
     value: {
+      alertType: normalizedAlertType,
       platform: String(platform).toLowerCase(),
       bundleId: String(bundleId),
       email: String(email).trim(),
@@ -93,6 +107,7 @@ export async function createAlert(req, res) {
   const item = {
     user_id: userId,
     alert_id: alertId,
+    alert_type: value.alertType,
     app_pk: appPkOf(value.platform, value.bundleId),
     platform: value.platform,
     bundle_id: value.bundleId,
@@ -162,8 +177,7 @@ export async function updateAlert(req, res) {
           alert_id: alertId,
         },
         UpdateExpression:
-          "SET app_pk = :appPk, platform = :platform, bundle_id = :bundleId, email = :email, enabled = :enabled, trigger_on_new_review = :trigger, keywords = :keywords, max_rating = :maxRating, updated_at = :updatedAt",
-        ConditionExpression: "attribute_exists(user_id) AND attribute_exists(alert_id)",
+        "SET alert_type = :alertType, app_pk = :appPk, platform = :platform, bundle_id = :bundleId, email = :email, enabled = :enabled, trigger_on_new_review = :trigger, keywords = :keywords, max_rating = :maxRating, updated_at = :updatedAt",
         ExpressionAttributeValues: {
           ":appPk": appPkOf(value.platform, value.bundleId),
           ":platform": value.platform,
@@ -174,6 +188,7 @@ export async function updateAlert(req, res) {
           ":keywords": value.keywords,
           ":maxRating": value.maxRating,
           ":updatedAt": new Date().toISOString(),
+          ":alertType": value.alertType,
         },
         ReturnValues: "ALL_NEW",
       })
