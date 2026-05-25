@@ -16,8 +16,7 @@ const {
   UpdateCommand,
   GetCommand,
 } = require("@aws-sdk/lib-dynamodb");
-const { detectReviewAnomaly } = require("./reviewAnomalyDetector.js");
-
+const anomalyDetector = require("./reviewAnomalyDetector.js");
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION || "eu-west-3";
 const REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
@@ -391,7 +390,7 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
   });
 
   if (insertedReviews.length > 0) {
-    await detectReviewAnomaly({
+    await anomalyDetector.detectReviewAnomaly({
       appPk: appPk(plat, bundleId),
       appName,
       platform: plat,
