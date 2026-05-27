@@ -106,9 +106,9 @@ jobs:
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/alertNotifier.js
 
-      - name: Debug worker export
+      - name: Validate worker export
         run: |
-          grep "exports.handler" dist/worker.js
+          node -e "const w = require('./dist/worker.js'); console.log('worker exports:', Object.keys(w)); if (typeof w.handler !== 'function') { throw new Error('worker.handler missing'); }"
 
       - name: Package bundle into zip
         run: |
