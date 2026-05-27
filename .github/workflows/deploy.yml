@@ -58,10 +58,12 @@ jobs:
         run: zip revox-backend.zip index.js worker.js userSync.js ingestScheduler.js themesWorker.js themesScheduleRunner.js alertNotifier.js
         working-directory: .
 
-      - name: Debug zip content
-        run: unzip -l revox-backend.zip
+      - name: Debug bundled worker
+        run: |
+          grep "exports.handler" worker.js || true
+          unzip -l revox-backend.zip
         working-directory: .
-
+        
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
