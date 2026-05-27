@@ -33,10 +33,17 @@ jobs:
       - name: Ensure esbuild is available
         run: npm i -D esbuild
 
-      - name: Create dist folder
+      - name: Create build folders
         run: |
-          rm -rf dist
-          mkdir -p dist
+          rm -rf dist .lambda-entry
+          mkdir -p dist .lambda-entry
+
+      - name: Create worker entrypoint
+        run: |
+          cat > .lambda-entry/worker-entry.js <<'EOF'
+          import worker from "../worker.js";
+          export const handler = worker.handler;
+          EOF
 
       - name: Bundle main handler
         run: |
@@ -50,7 +57,7 @@ jobs:
 
       - name: Bundle worker
         run: |
-          npx esbuild worker.js \
+          npx esbuild .lambda-entry/worker-entry.js \
             --bundle \
             --platform=node \
             --target=node18 \
@@ -108,7 +115,7 @@ jobs:
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/alertNotifier.js
 
-      - name: Validate Lambda exports
+      - name: Validate worker export
         run: |
           node -e "const w = require('./dist/worker.js'); console.log('worker keys:', Object.keys(w)); if (typeof w.handler !== 'function') throw new Error('worker.handler missing');"
 

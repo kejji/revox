@@ -17,6 +17,8 @@ const {
   GetCommand,
 } = require("@aws-sdk/lib-dynamodb");
 const anomalyDetector = require("./reviewAnomalyDetector.js");
+const gplay = require("google-play-scraper");
+const store = require("app-store-scraper");
 // ---------- Config ----------
 const REGION = process.env.AWS_REGION || "eu-west-3";
 const REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
