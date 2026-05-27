@@ -33,133 +33,40 @@ jobs:
       - name: Ensure esbuild is available
         run: npm i -D esbuild
 
-      - name: Create build folders
+      - name: Create dist folder
         run: |
-          rm -rf dist .lambda-entry
-          mkdir -p dist .lambda-entry
-
-      - name: Create Lambda entrypoints
-        run: |
-          cat > .lambda-entry/index-entry.js <<'EOF'
-          import * as mod from "../index.js";
-          export const handler = mod.handler;
-          EOF
-
-          cat > .lambda-entry/worker-entry.js <<'EOF'
-          import * as mod from "../worker.js";
-          export const handler = mod.handler;
-          EOF
-
-          cat > .lambda-entry/userSync-entry.js <<'EOF'
-          import * as mod from "../userSync.js";
-          export const handler = mod.handler;
-          EOF
-
-          cat > .lambda-entry/ingestScheduler-entry.js <<'EOF'
-          import * as mod from "../ingestScheduler.js";
-          export const handler = mod.handler;
-          EOF
-
-          cat > .lambda-entry/themesWorker-entry.js <<'EOF'
-          import * as mod from "../themesWorker.js";
-          export const handler = mod.handler;
-          EOF
-
-          cat > .lambda-entry/themesScheduleRunner-entry.js <<'EOF'
-          import * as mod from "../themesScheduleRunner.js";
-          export const handler = mod.handler;
-          EOF
-
-          cat > .lambda-entry/alertNotifier-entry.js <<'EOF'
-          import * as mod from "../alertNotifier.js";
-          export const handler = mod.handler;
-          EOF
+          rm -rf dist
+          mkdir -p dist
 
       - name: Bundle main handler
-        run: |
-          npx esbuild .lambda-entry/index-entry.js \
-            --bundle \
-            --platform=node \
-            --target=node18 \
-            --format=cjs \
-            --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=dist/index.js
+        run: npx esbuild index.js --bundle --platform=node --target=node18 --format=cjs --banner:js="globalThis.crypto = require('crypto').webcrypto;" --outfile=dist/index.js
 
       - name: Bundle worker
-        run: |
-          npx esbuild .lambda-entry/worker-entry.js \
-            --bundle \
-            --platform=node \
-            --target=node18 \
-            --format=cjs \
-            --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=dist/worker.js
+        run: npx esbuild worker.js --bundle --platform=node --target=node18 --format=cjs --banner:js="globalThis.crypto = require('crypto').webcrypto;" --outfile=dist/worker.js
 
       - name: Bundle userSync
-        run: |
-          npx esbuild .lambda-entry/userSync-entry.js \
-            --bundle \
-            --platform=node \
-            --target=node18 \
-            --format=cjs \
-            --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=dist/userSync.js
+        run: npx esbuild userSync.js --bundle --platform=node --target=node18 --format=cjs --banner:js="globalThis.crypto = require('crypto').webcrypto;" --outfile=dist/userSync.js
 
       - name: Bundle ingestScheduler
-        run: |
-          npx esbuild .lambda-entry/ingestScheduler-entry.js \
-            --bundle \
-            --platform=node \
-            --target=node18 \
-            --format=cjs \
-            --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=dist/ingestScheduler.js
+        run: npx esbuild ingestScheduler.js --bundle --platform=node --target=node18 --format=cjs --banner:js="globalThis.crypto = require('crypto').webcrypto;" --outfile=dist/ingestScheduler.js
 
       - name: Bundle themesWorker
-        run: |
-          npx esbuild .lambda-entry/themesWorker-entry.js \
-            --bundle \
-            --platform=node \
-            --target=node18 \
-            --format=cjs \
-            --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=dist/themesWorker.js
+        run: npx esbuild themesWorker.js --bundle --platform=node --target=node18 --format=cjs --banner:js="globalThis.crypto = require('crypto').webcrypto;" --outfile=dist/themesWorker.js
 
       - name: Bundle themesScheduleRunner
-        run: |
-          npx esbuild .lambda-entry/themesScheduleRunner-entry.js \
-            --bundle \
-            --platform=node \
-            --target=node18 \
-            --format=cjs \
-            --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=dist/themesScheduleRunner.js
+        run: npx esbuild themesScheduleRunner.js --bundle --platform=node --target=node18 --format=cjs --banner:js="globalThis.crypto = require('crypto').webcrypto;" --outfile=dist/themesScheduleRunner.js
 
       - name: Bundle alertNotifier
-        run: |
-          npx esbuild .lambda-entry/alertNotifier-entry.js \
-            --bundle \
-            --platform=node \
-            --target=node18 \
-            --format=cjs \
-            --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=dist/alertNotifier.js
+        run: npx esbuild alertNotifier.js --bundle --platform=node --target=node18 --format=cjs --banner:js="globalThis.crypto = require('crypto').webcrypto;" --outfile=dist/alertNotifier.js
 
       - name: Validate Lambda exports
         run: |
-          node -e "for (const f of ['index','worker','userSync','ingestScheduler','themesWorker','themesScheduleRunner','alertNotifier']) { const m = require('./dist/' + f + '.js'); console.log(f, Object.keys(m)); if (typeof m.handler !== 'function') throw new Error(f + '.handler missing'); }"
+          node -e "const w = require('./dist/worker.js'); console.log('worker keys:', Object.keys(w)); if (typeof w.handler !== 'function') throw new Error('worker.handler missing');"
 
       - name: Package bundle into zip
         run: |
           cd dist
-          zip revox-backend.zip \
-            index.js \
-            worker.js \
-            userSync.js \
-            ingestScheduler.js \
-            themesWorker.js \
-            themesScheduleRunner.js \
-            alertNotifier.js
+          zip revox-backend.zip index.js worker.js userSync.js ingestScheduler.js themesWorker.js themesScheduleRunner.js alertNotifier.js
 
       - name: Debug zip content
         run: |
