@@ -33,6 +33,9 @@ jobs:
       - name: Ensure esbuild is available
         run: npm i -D esbuild
 
+      - name: Create dist folder
+        run: mkdir -p dist
+
       - name: Bundle main handler
         run: |
           npx esbuild index.js \
@@ -40,7 +43,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=index.js
+            --outfile=dist/index.js
 
       - name: Bundle worker
         run: |
@@ -49,7 +52,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=worker.js
+            --outfile=dist/worker.js
 
       - name: Bundle userSync
         run: |
@@ -58,7 +61,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=userSync.js
+            --outfile=dist/userSync.js
 
       - name: Bundle ingestScheduler
         run: |
@@ -67,7 +70,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=ingestScheduler.js
+            --outfile=dist/ingestScheduler.js
 
       - name: Bundle themesWorker
         run: |
@@ -76,7 +79,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=themesWorker.js
+            --outfile=dist/themesWorker.js
 
       - name: Bundle themesScheduleRunner
         run: |
@@ -85,7 +88,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=themesScheduleRunner.js
+            --outfile=dist/themesScheduleRunner.js
 
       - name: Bundle alertNotifier
         run: |
@@ -94,14 +97,15 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=alertNotifier.js
+            --outfile=dist/alertNotifier.js
 
       - name: Debug worker export
         run: |
-          grep "exports.handler" worker.js
+          grep "exports.handler" dist/worker.js
 
       - name: Package bundle into zip
         run: |
+          cd dist
           zip revox-backend.zip \
             index.js \
             worker.js \
@@ -113,8 +117,8 @@ jobs:
 
       - name: Debug zip content
         run: |
-          unzip -l revox-backend.zip
-          unzip -p revox-backend.zip worker.js | grep "exports.handler"
+          unzip -l dist/revox-backend.zip
+          unzip -p dist/revox-backend.zip worker.js | grep "exports.handler"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -125,10 +129,10 @@ jobs:
 
       - name: Deploy to Lambda
         run: |
-          aws lambda update-function-code --function-name revox-backend          --zip-file fileb://revox-backend.zip --region eu-west-3
-          aws lambda update-function-code --function-name revox-worker           --zip-file fileb://revox-backend.zip --region eu-west-3
-          aws lambda update-function-code --function-name revox-user-sync        --zip-file fileb://revox-backend.zip --region eu-west-3
-          aws lambda update-function-code --function-name revox-ingest-scheduler --zip-file fileb://revox-backend.zip --region eu-west-3
-          aws lambda update-function-code --function-name revox-themes-worker    --zip-file fileb://revox-backend.zip --region eu-west-3
-          aws lambda update-function-code --function-name revox-themes-scheduler --zip-file fileb://revox-backend.zip --region eu-west-3
-          aws lambda update-function-code --function-name revox-alert-notifier   --zip-file fileb://revox-backend.zip --region eu-west-3
+          aws lambda update-function-code --function-name revox-backend          --zip-file fileb://dist/revox-backend.zip --region eu-west-3
+          aws lambda update-function-code --function-name revox-worker           --zip-file fileb://dist/revox-backend.zip --region eu-west-3
+          aws lambda update-function-code --function-name revox-user-sync        --zip-file fileb://dist/revox-backend.zip --region eu-west-3
+          aws lambda update-function-code --function-name revox-ingest-scheduler --zip-file fileb://dist/revox-backend.zip --region eu-west-3
+          aws lambda update-function-code --function-name revox-themes-worker    --zip-file fileb://dist/revox-backend.zip --region eu-west-3
+          aws lambda update-function-code --function-name revox-themes-scheduler --zip-file fileb://dist/revox-backend.zip --region eu-west-3
+          aws lambda update-function-code --function-name revox-alert-notifier   --zip-file fileb://dist/revox-backend.zip --region eu-west-3
