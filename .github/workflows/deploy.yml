@@ -27,7 +27,7 @@ jobs:
           cache: "npm"
           cache-dependency-path: backend/package-lock.json
 
-      - name: Install dependencies (backend)
+      - name: Install dependencies
         run: npm ci
 
       - name: Ensure esbuild is available
@@ -40,7 +40,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=../index.js
+            --outfile=index.js
 
       - name: Bundle worker
         run: |
@@ -49,7 +49,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=../worker.js
+            --outfile=worker.js
 
       - name: Bundle userSync
         run: |
@@ -58,7 +58,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=../userSync.js
+            --outfile=userSync.js
 
       - name: Bundle ingestScheduler
         run: |
@@ -67,7 +67,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=../ingestScheduler.js
+            --outfile=ingestScheduler.js
 
       - name: Bundle themesWorker
         run: |
@@ -76,7 +76,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=../themesWorker.js
+            --outfile=themesWorker.js
 
       - name: Bundle themesScheduleRunner
         run: |
@@ -85,7 +85,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=../themesScheduleRunner.js
+            --outfile=themesScheduleRunner.js
 
       - name: Bundle alertNotifier
         run: |
@@ -94,22 +94,11 @@ jobs:
             --platform=node \
             --target=node18 \
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
-            --outfile=../alertNotifier.js
+            --outfile=alertNotifier.js
 
-      - name: Copy bundles into backend folder
-        run: |
-          cp ../index.js .
-          cp ../worker.js .
-          cp ../userSync.js .
-          cp ../ingestScheduler.js .
-          cp ../themesWorker.js .
-          cp ../themesScheduleRunner.js .
-          cp ../alertNotifier.js .
-
-      - name: Debug bundled worker
+      - name: Debug worker export
         run: |
           grep "exports.handler" worker.js
-          ls -lah worker.js
 
       - name: Package bundle into zip
         run: |
