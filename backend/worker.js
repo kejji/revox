@@ -544,7 +544,7 @@ async function enqueueAlertNotifications({ platform, bundleId, appName, inserted
 }
 
 // ---------- Handler ----------
-exports.handler = async (event) => {
+async function handler(event) {
   const { default: gplay } = await import("google-play-scraper");
   const { default: store } = await import("app-store-scraper");
 
@@ -554,18 +554,27 @@ exports.handler = async (event) => {
     catch { console.error("SQS message invalide:", rec.body); continue; }
 
     const { appName, platform, bundleId, backfillDays } = msg || {};
-    if (!platform || !bundleId) { console.error("Message incomplet (platform/bundleId requis):", msg); continue; }
+    if (!platform || !bundleId) {
+      console.error("Message incomplet (platform/bundleId requis):", msg);
+      continue;
+    }
 
-    // Résolution robuste du nom d'app si manquant
     let resolvedName = appName;
     if (!resolvedName) {
       resolvedName = await getAppNameFromMetadata(platform, bundleId);
-      if (!resolvedName) {
-        resolvedName = bundleId;
-      }
+      if (!resolvedName) resolvedName = bundleId;
     }
+
     try {
-      const stats = await runIncremental({ appName: resolvedName, platform, bundleId, backfillDays, gplay, store });
+      const stats = await runIncremental({
+        appName: resolvedName,
+        platform,
+        bundleId,
+        backfillDays,
+        gplay,
+        store,
+      });
+
       logInfo("ingestion.completed", {
         app_pk: appPk(platform, bundleId),
         appName: resolvedName,
@@ -573,10 +582,15 @@ exports.handler = async (event) => {
         bundleId,
         ...stats,
       });
+
       await bumpAppReviewCounter({ platform, bundleId, inserted: stats.inserted });
       await ensureTotalInitialized({ platform, bundleId, inserted: stats.inserted });
     } catch (e) {
       console.error("Erreur worker:", e?.message || e);
     }
   }
+}
+
+module.exports = {
+  handler,
 };
