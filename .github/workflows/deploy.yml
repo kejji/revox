@@ -108,8 +108,8 @@ jobs:
 
       - name: Validate worker export
         run: |
-          node -e "const w = require('./dist/worker.js'); console.log('worker exports:', Object.keys(w)); if (typeof w.handler !== 'function') { throw new Error('worker.handler missing'); }"
-
+          node -e "const w = require('./dist/worker.js'); console.log(w); console.log('keys:', Object.keys(w)); if (typeof w.handler !== 'function') { throw new Error('worker.handler missing'); }"
+      
       - name: Package bundle into zip
         run: |
           cd dist
