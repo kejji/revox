@@ -33,12 +33,51 @@ jobs:
       - name: Ensure esbuild is available
         run: npm i -D esbuild
 
-      - name: Create dist folder
-        run: mkdir -p dist
+      - name: Create build folders
+        run: |
+          rm -rf dist .lambda-entry
+          mkdir -p dist .lambda-entry
+
+      - name: Create Lambda entrypoints
+        run: |
+          cat > .lambda-entry/index-entry.js <<'EOF'
+          import * as mod from "../index.js";
+          export const handler = mod.handler;
+          EOF
+
+          cat > .lambda-entry/worker-entry.js <<'EOF'
+          import * as mod from "../worker.js";
+          export const handler = mod.handler;
+          EOF
+
+          cat > .lambda-entry/userSync-entry.js <<'EOF'
+          import * as mod from "../userSync.js";
+          export const handler = mod.handler;
+          EOF
+
+          cat > .lambda-entry/ingestScheduler-entry.js <<'EOF'
+          import * as mod from "../ingestScheduler.js";
+          export const handler = mod.handler;
+          EOF
+
+          cat > .lambda-entry/themesWorker-entry.js <<'EOF'
+          import * as mod from "../themesWorker.js";
+          export const handler = mod.handler;
+          EOF
+
+          cat > .lambda-entry/themesScheduleRunner-entry.js <<'EOF'
+          import * as mod from "../themesScheduleRunner.js";
+          export const handler = mod.handler;
+          EOF
+
+          cat > .lambda-entry/alertNotifier-entry.js <<'EOF'
+          import * as mod from "../alertNotifier.js";
+          export const handler = mod.handler;
+          EOF
 
       - name: Bundle main handler
         run: |
-          npx esbuild index.js \
+          npx esbuild .lambda-entry/index-entry.js \
             --bundle \
             --platform=node \
             --target=node18 \
@@ -48,7 +87,7 @@ jobs:
 
       - name: Bundle worker
         run: |
-          npx esbuild worker.js \
+          npx esbuild .lambda-entry/worker-entry.js \
             --bundle \
             --platform=node \
             --target=node18 \
@@ -58,7 +97,7 @@ jobs:
 
       - name: Bundle userSync
         run: |
-          npx esbuild userSync.js \
+          npx esbuild .lambda-entry/userSync-entry.js \
             --bundle \
             --platform=node \
             --target=node18 \
@@ -68,7 +107,7 @@ jobs:
 
       - name: Bundle ingestScheduler
         run: |
-          npx esbuild ingestScheduler.js \
+          npx esbuild .lambda-entry/ingestScheduler-entry.js \
             --bundle \
             --platform=node \
             --target=node18 \
@@ -78,7 +117,7 @@ jobs:
 
       - name: Bundle themesWorker
         run: |
-          npx esbuild themesWorker.js \
+          npx esbuild .lambda-entry/themesWorker-entry.js \
             --bundle \
             --platform=node \
             --target=node18 \
@@ -88,7 +127,7 @@ jobs:
 
       - name: Bundle themesScheduleRunner
         run: |
-          npx esbuild themesScheduleRunner.js \
+          npx esbuild .lambda-entry/themesScheduleRunner-entry.js \
             --bundle \
             --platform=node \
             --target=node18 \
@@ -98,7 +137,7 @@ jobs:
 
       - name: Bundle alertNotifier
         run: |
-          npx esbuild alertNotifier.js \
+          npx esbuild .lambda-entry/alertNotifier-entry.js \
             --bundle \
             --platform=node \
             --target=node18 \
@@ -106,10 +145,10 @@ jobs:
             --banner:js="globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/alertNotifier.js
 
-      - name: Validate worker export
+      - name: Validate Lambda exports
         run: |
-          node -e "const w = require('./dist/worker.js'); console.log(w); console.log('keys:', Object.keys(w)); if (typeof w.handler !== 'function') { throw new Error('worker.handler missing'); }"
-      
+          node -e "for (const f of ['index','worker','userSync','ingestScheduler','themesWorker','themesScheduleRunner','alertNotifier']) { const m = require('./dist/' + f + '.js'); console.log(f, Object.keys(m)); if (typeof m.handler !== 'function') throw new Error(f + '.handler missing'); }"
+
       - name: Package bundle into zip
         run: |
           cd dist
@@ -125,7 +164,7 @@ jobs:
       - name: Debug zip content
         run: |
           unzip -l dist/revox-backend.zip
-          unzip -p dist/revox-backend.zip worker.js | grep "exports.handler"
+          unzip -p dist/revox-backend.zip worker.js | grep "handler"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
