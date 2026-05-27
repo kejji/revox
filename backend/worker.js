@@ -1,25 +1,24 @@
 // worker.js — Ingestion simple & idempotente de reviews vers DynamoDB
 // -------------------------------------------------------------------
-// SQS message attendu: { platform: "android"|"ios", bundleId, backfillDays? }
-//
-// ENV requises:
-//   - AWS_REGION
-//   - APP_REVIEWS_TABLE
-// -------------------------------------------------------------------
 
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
-const {
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+
+import {
   DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
   UpdateCommand,
   GetCommand,
-} = require("@aws-sdk/lib-dynamodb");
-const anomalyDetector = require("./reviewAnomalyDetector.js");
-const gplay = require("google-play-scraper");
-const store = require("app-store-scraper");
+} from "@aws-sdk/lib-dynamodb";
+
+import gplay from "google-play-scraper";
+import store from "app-store-scraper";
+
+import { detectReviewAnomaly } from "./reviewAnomalyDetector.js";
+
 // ---------- Config ----------
+
 const REGION = process.env.AWS_REGION || "eu-west-3";
 const REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 const FIRST_RUN_DAYS = 150;
@@ -29,29 +28,13 @@ const ALERTS_TABLE = process.env.ALERTS_TABLE;
 const ALERTS_QUEUE_URL = process.env.ALERTS_QUEUE_URL;
 
 // ---------- Clients ----------
+
 const ddbDoc = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: REGION }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
-const sqs = new SQSClient({ region: REGION });
 
-// ---------- Helper ----------
-async function bumpAppReviewCounter({ platform, bundleId, inserted }) {
-  if (!inserted || inserted <= 0) return;
-  const pk = appPk(platform, bundleId);
-  try {
-    await ddbDoc.send(new UpdateCommand({
-      TableName: METADATA_TABLE,
-      Key: { app_pk: pk },
-      // ADD est atomique; on set aussi un "last_ingest_at" pour info
-      UpdateExpression: `ADD total_reviews :inc SET last_ingest_at = :now`,
-      ExpressionAttributeValues: { ":inc": inserted, ":now": new Date().toISOString() },
-    }));
-    console.log(`[COUNTER] ${pk} += ${inserted}`);
-  } catch (e) {
-    console.error("[COUNTER] update error:", e?.message || e);
-  }
-} 
+const sqs = new SQSClient({ region: REGION });
 
 // ---------- Logs ----------
 
@@ -69,139 +52,273 @@ function logInfo(event, data = {}) {
   log("INFO", event, data);
 }
 
-function logWarn(event, data = {}) {
-  log("WARN", event, data);
+// ---------- Utils ----------
+
+const toMillis = (v) =>
+  (v instanceof Date)
+    ? v.getTime()
+    : (Number.isFinite(+v) ? +v : Date.parse(v));
+
+const toISODate = (v) => new Date(toMillis(v)).toISOString();
+
+const norm = (s) => (s ?? "").toString().trim().toLowerCase();
+
+function hashFNV1a(str = "") {
+  let h = 0x811c9dc5 >>> 0;
+
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+
+    h =
+      (h +
+        ((h << 1) +
+          (h << 4) +
+          (h << 7) +
+          (h << 8) +
+          (h << 24))) >>> 0;
+  }
+
+  return h.toString(36);
 }
 
-function logError(event, data = {}) {
-  log("ERROR", event, data);
+const sig3 = (dateISO, text, user) =>
+  hashFNV1a(`${dateISO}#${norm(text)}#${norm(user)}`);
+
+const appPk = (platform, bundleId) =>
+  `${String(platform).toLowerCase()}#${bundleId}`;
+
+const isWithin = (dateISO, fromISO, toISO) => {
+  const t = new Date(dateISO).getTime();
+
+  return (
+    t >= new Date(fromISO).getTime() &&
+    t <= new Date(toISO).getTime()
+  );
+};
+
+const processInBatches = async (items, size, fn) => {
+  for (let i = 0; i < items.length; i += size) {
+    const slice = items.slice(i, i + size);
+
+    await Promise.allSettled(slice.map(fn));
+  }
+};
+
+// ---------- Counter ----------
+
+async function bumpAppReviewCounter({
+  platform,
+  bundleId,
+  inserted,
+}) {
+  if (!inserted || inserted <= 0) return;
+
+  const pk = appPk(platform, bundleId);
+
+  try {
+    await ddbDoc.send(
+      new UpdateCommand({
+        TableName: METADATA_TABLE,
+        Key: { app_pk: pk },
+
+        UpdateExpression:
+          `ADD total_reviews :inc SET last_ingest_at = :now`,
+
+        ExpressionAttributeValues: {
+          ":inc": inserted,
+          ":now": new Date().toISOString(),
+        },
+      })
+    );
+
+    console.log(`[COUNTER] ${pk} += ${inserted}`);
+  } catch (e) {
+    console.error("[COUNTER] update error:", e?.message || e);
+  }
 }
 
-// ---------- Compteurs : self-heal si pré-remplissage ----------
+// ---------- Count ----------
+
 async function countAllReviewsByPk(app_pk) {
-  let count = 0, lastKey;
+  let count = 0;
+  let lastKey;
+
   do {
-    const q = await ddbDoc.send(new QueryCommand({
-      TableName: REVIEWS_TABLE,
-      KeyConditionExpression: "app_pk = :pk",
-      ExpressionAttributeValues: { ":pk": app_pk },
-      Select: "COUNT",
-      ExclusiveStartKey: lastKey
-    }));
+    const q = await ddbDoc.send(
+      new QueryCommand({
+        TableName: REVIEWS_TABLE,
+        KeyConditionExpression: "app_pk = :pk",
+        ExpressionAttributeValues: {
+          ":pk": app_pk,
+        },
+        Select: "COUNT",
+        ExclusiveStartKey: lastKey,
+      })
+    );
+
     count += q.Count || 0;
+
     lastKey = q.LastEvaluatedKey;
   } while (lastKey);
+
   return count;
 }
 
-async function ensureTotalInitialized({ platform, bundleId, inserted }) {
+async function ensureTotalInitialized({
+  platform,
+  bundleId,
+  inserted,
+}) {
   const pk = appPk(platform, bundleId);
+
   try {
-    // Si on a inséré quelque chose, l'ADD du compteur suffit.
     if (inserted > 0) return;
-    // Vérifie l'état courant du compteur
-    const meta = await ddbDoc.send(new GetCommand({
-      TableName: METADATA_TABLE,
-      Key: { app_pk: pk },
-      ProjectionExpression: "total_reviews"
-    }));
+
+    const meta = await ddbDoc.send(
+      new GetCommand({
+        TableName: METADATA_TABLE,
+        Key: { app_pk: pk },
+        ProjectionExpression: "total_reviews",
+      })
+    );
+
     const current = meta.Item?.total_reviews;
-    if (Number.isFinite(current) && current > 0) return; // déjà initialisé
-    // Compte réel en base (peut paginer si >1 Mo)
+
+    if (Number.isFinite(current) && current > 0) return;
+
     const accurate = await countAllReviewsByPk(pk);
-    // Écrit une seule fois si 0/absent (idempotent)
-    await ddbDoc.send(new UpdateCommand({
-      TableName: METADATA_TABLE,
-      Key: { app_pk: pk },
-      UpdateExpression: "SET total_reviews = :n, last_ingest_at = :now",
-      ConditionExpression: "attribute_not_exists(total_reviews) OR total_reviews = :zero",
-      ExpressionAttributeValues: {
-        ":n": accurate,
-        ":now": new Date().toISOString(),
-        ":zero": 0
-      }
-    }));
+
+    await ddbDoc.send(
+      new UpdateCommand({
+        TableName: METADATA_TABLE,
+        Key: { app_pk: pk },
+
+        UpdateExpression:
+          "SET total_reviews = :n, last_ingest_at = :now",
+
+        ConditionExpression:
+          "attribute_not_exists(total_reviews) OR total_reviews = :zero",
+
+        ExpressionAttributeValues: {
+          ":n": accurate,
+          ":now": new Date().toISOString(),
+          ":zero": 0,
+        },
+      })
+    );
+
     console.log(`[COUNTER_INIT] ${pk} total_reviews set to ${accurate}`);
   } catch (e) {
     console.warn("[COUNTER_INIT] skipped:", e?.message || e);
   }
 }
 
-// ---------- Lookup helpers ----------
+// ---------- Lookup ----------
+
 async function getAppNameFromMetadata(platform, bundleId) {
   if (!METADATA_TABLE) return null;
+
   try {
     const pk = appPk(platform, bundleId);
-    const out = await ddbDoc.send(new QueryCommand({
-      TableName: METADATA_TABLE,
-      // NB: on a une PK simple sur app_pk → GetItem serait suffisant, mais on garde la même lib
-      // Si tu préfères: use GetCommand avec Key: { app_pk: pk }
-    }));
-  } catch { }
-  try {
-    const pk = appPk(platform, bundleId);
-    const { GetCommand } = require("@aws-sdk/lib-dynamodb");
-    const got = await ddbDoc.send(new GetCommand({
-      TableName: METADATA_TABLE,
-      Key: { app_pk: pk },
-      ProjectionExpression: "#n",
-      ExpressionAttributeNames: { "#n": "name" }
-    }));
+
+    const got = await ddbDoc.send(
+      new GetCommand({
+        TableName: METADATA_TABLE,
+        Key: { app_pk: pk },
+
+        ProjectionExpression: "#n",
+
+        ExpressionAttributeNames: {
+          "#n": "name",
+        },
+      })
+    );
+
     return got?.Item?.name ?? null;
   } catch (e) {
-    console.warn("[worker] getAppNameFromMetadata error:", e?.message || e);
+    console.warn(
+      "[worker] getAppNameFromMetadata error:",
+      e?.message || e
+    );
+
     return null;
   }
 }
 
-// ---------- Utils ----------
-const toMillis = (v) => (v instanceof Date) ? v.getTime() : (Number.isFinite(+v) ? +v : Date.parse(v));
-const toISODate = (v) => new Date(toMillis(v)).toISOString();
-const norm = (s) => (s ?? "").toString().trim().toLowerCase();
-function hashFNV1a(str = "") { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; } return h.toString(36); }
-const sig3 = (dateISO, text, user) => hashFNV1a(`${dateISO}#${norm(text)}#${norm(user)}`);
-const appPk = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
-const isWithin = (dateISO, fromISO, toISO) => {
-  const t = new Date(dateISO).getTime();
-  return t >= new Date(fromISO).getTime() && t <= new Date(toISO).getTime();
-};
-const processInBatches = async (items, size, fn) => {
-  for (let i = 0; i < items.length; i += size) {
-    const slice = items.slice(i, i + size);
-    await Promise.allSettled(slice.map(fn));
-  }
-};
+// ---------- Window ----------
 
-// ---------- Fenêtre d’ingestion ----------
 function normalizeBackfillDays(v, def = 2) {
   const n = Number(v);
+
   if (!Number.isFinite(n)) return def;
-  return Math.min(Math.max(0, Math.floor(n)), MAX_BACKFILL_DAYS);
-}
-async function getLatestReviewItem(platform, bundleId) {
-  const out = await ddbDoc.send(new QueryCommand({
-    TableName: REVIEWS_TABLE,
-    KeyConditionExpression: "app_pk = :pk",
-    ExpressionAttributeValues: { ":pk": appPk(platform, bundleId) },
-    ScanIndexForward: false,
-    Limit: 1
-  }));
-  return (out.Items && out.Items[0]) || null;
-}
-function computeWindow(latestItem, backfillDaysRaw) {
-  const backfillDays = normalizeBackfillDays(backfillDaysRaw, 2);
-  const now = new Date();
-  if (!latestItem) {
-    const from = new Date(now); from.setUTCDate(from.getUTCDate() - FIRST_RUN_DAYS);
-    return { fromISO: from.toISOString(), toISO: now.toISOString(), reason: "first-run", effectiveBackfillDays: FIRST_RUN_DAYS };
-  }
-  const from = new Date(latestItem.date);
-  from.setUTCDate(from.getUTCDate() - backfillDays);
-  if (from.getTime() > now.getTime()) from.setTime(now.getTime());
-  return { fromISO: from.toISOString(), toISO: now.toISOString(), reason: "incremental", effectiveBackfillDays: backfillDays };
+
+  return Math.min(
+    Math.max(0, Math.floor(n)),
+    MAX_BACKFILL_DAYS
+  );
 }
 
-// ---------- Normalisation + écriture ----------
+async function getLatestReviewItem(platform, bundleId) {
+  const out = await ddbDoc.send(
+    new QueryCommand({
+      TableName: REVIEWS_TABLE,
+
+      KeyConditionExpression:
+        "app_pk = :pk",
+
+      ExpressionAttributeValues: {
+        ":pk": appPk(platform, bundleId),
+      },
+
+      ScanIndexForward: false,
+      Limit: 1,
+    })
+  );
+
+  return (out.Items && out.Items[0]) || null;
+}
+
+function computeWindow(latestItem, backfillDaysRaw) {
+  const backfillDays =
+    normalizeBackfillDays(backfillDaysRaw, 2);
+
+  const now = new Date();
+
+  if (!latestItem) {
+    const from = new Date(now);
+
+    from.setUTCDate(
+      from.getUTCDate() - FIRST_RUN_DAYS
+    );
+
+    return {
+      fromISO: from.toISOString(),
+      toISO: now.toISOString(),
+      reason: "first-run",
+      effectiveBackfillDays: FIRST_RUN_DAYS,
+    };
+  }
+
+  const from = new Date(latestItem.date);
+
+  from.setUTCDate(
+    from.getUTCDate() - backfillDays
+  );
+
+  if (from.getTime() > now.getTime()) {
+    from.setTime(now.getTime());
+  }
+
+  return {
+    fromISO: from.toISOString(),
+    toISO: now.toISOString(),
+    reason: "incremental",
+    effectiveBackfillDays: backfillDays,
+  };
+}
+
+// ---------- DDB ----------
+
 function toDdbItem(raw) {
   const rv = {
     app_name: raw.app_name,
@@ -211,11 +328,15 @@ function toDdbItem(raw) {
     text: raw.text,
     user_name: raw.user_name,
     app_version: raw.app_version,
-    app_id: raw.app_id,                 // Android = bundleId, iOS = facultatif
+    app_id: raw.app_id,
     bundle_id: raw.bundle_id || raw.app_id,
   };
+
   const pk = appPk(rv.platform, rv.bundle_id);
-  const sk = `${rv.date}#${sig3(rv.date, rv.text, rv.user_name)}`;
+
+  const sk =
+    `${rv.date}#${sig3(rv.date, rv.text, rv.user_name)}`;
+
   return {
     app_pk: pk,
     ts_review: sk,
@@ -232,8 +353,10 @@ function toDdbItem(raw) {
     source: "store-scraper-v1",
   };
 }
+
 async function saveReviewToDDB(raw, { cache }) {
   const item = toDdbItem(raw);
+
   const cacheKey = item.ts_review;
 
   if (cache && cache.has(cacheKey)) {
@@ -244,6 +367,7 @@ async function saveReviewToDDB(raw, { cache }) {
     new PutCommand({
       TableName: REVIEWS_TABLE,
       Item: item,
+
       ConditionExpression:
         "attribute_not_exists(app_pk) AND attribute_not_exists(ts_review)",
     })
@@ -251,13 +375,25 @@ async function saveReviewToDDB(raw, { cache }) {
 
   cache && cache.add(cacheKey);
 
-  return { inserted: true, item };
+  return {
+    inserted: true,
+    item,
+  };
 }
 
 // ---------- Scrapers ----------
-async function scrapeAndroidReviews({ gplay, appName, bundleId, fromISO, toISO }) {
+
+async function scrapeAndroidReviews({
+  appName,
+  bundleId,
+  fromISO,
+  toISO,
+}) {
   const pageSize = 100;
-  let token, out = [];
+
+  let token;
+  let out = [];
+
   while (true) {
     const resp = await gplay.reviews({
       appId: bundleId,
@@ -268,7 +404,8 @@ async function scrapeAndroidReviews({ gplay, appName, bundleId, fromISO, toISO }
       lang: "fr",
       country: "fr",
     });
-    const mapped = (resp?.data || []).map(r => ({
+
+    const mapped = (resp?.data || []).map((r) => ({
       app_name: appName,
       platform: "android",
       date: toISODate(r?.date),
@@ -278,15 +415,24 @@ async function scrapeAndroidReviews({ gplay, appName, bundleId, fromISO, toISO }
       app_version: r?.version ?? "",
       bundle_id: bundleId,
     }));
+
     let passedFrom = false;
+
     for (const it of mapped) {
-      if (isWithin(it.date, fromISO, toISO)) out.push(it);
-      else if (new Date(it.date) < new Date(fromISO)) passedFrom = true;
+      if (isWithin(it.date, fromISO, toISO)) {
+        out.push(it);
+      } else if (new Date(it.date) < new Date(fromISO)) {
+        passedFrom = true;
+      }
     }
+
     if (passedFrom) break;
+
     token = resp?.nextPaginationToken;
+
     if (!token) break;
   }
+
   return out;
 }
 
@@ -593,6 +739,4 @@ async function handler(event) {
   }
 }
 
-module.exports = {
-  handler,
-};
+export { handler };
