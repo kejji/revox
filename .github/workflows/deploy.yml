@@ -114,14 +114,19 @@ jobs:
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/alertNotifier.js
 
+      - name: Force dist as ESM
+        run: |
+          echo '{"type":"module"}' > dist/package.json
+
       - name: Validate worker export
         run: |
           node -e "import('./dist/worker.js').then(w => { console.log('worker keys:', Object.keys(w)); if (typeof w.handler !== 'function') throw new Error('worker.handler missing'); })"
-      
+
       - name: Package bundle into zip
         run: |
           cd dist
           zip revox-backend.zip \
+            package.json \
             index.js \
             worker.js \
             userSync.js \
@@ -133,6 +138,7 @@ jobs:
       - name: Debug zip content
         run: |
           unzip -l dist/revox-backend.zip
+          unzip -p dist/revox-backend.zip package.json
           unzip -p dist/revox-backend.zip worker.js | grep "handler"
 
       - name: Configure AWS credentials
