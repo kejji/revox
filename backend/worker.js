@@ -538,7 +538,7 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
   });
 
   if (insertedReviews.length > 0) {
-    await anomalyDetector.detectReviewAnomaly({
+    await detectReviewAnomaly({
       appPk: appPk(plat, bundleId),
       appName,
       platform: plat,
@@ -693,9 +693,6 @@ async function enqueueAlertNotifications({ platform, bundleId, appName, inserted
 
 // ---------- Handler ----------
 async function handler(event) {
-  const { default: gplay } = await import("google-play-scraper");
-  const { default: store } = await import("app-store-scraper");
-
   for (const rec of event.Records || []) {
     let msg;
     try { msg = JSON.parse(rec.body || "{}"); }

@@ -1,12 +1,12 @@
 // backend/reviewAnomalyDetector.js
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
-const {
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+import {
   DynamoDBDocumentClient,
   QueryCommand,
   GetCommand,
   UpdateCommand,
-} = require("@aws-sdk/lib-dynamodb");
+} from "@aws-sdk/lib-dynamodb";
 
 const REGION = process.env.AWS_REGION || "eu-west-3";
 const REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
@@ -309,6 +309,4 @@ async function detectReviewAnomaly({
   };
 }
 
-module.exports = {
-  detectReviewAnomaly,
-};
+export { detectReviewAnomaly };
