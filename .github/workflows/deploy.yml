@@ -50,7 +50,7 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=cjs \
+            --format=esm \
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/index.js
 
@@ -60,7 +60,7 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=cjs \
+            --format=esm \
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/worker.js
 
@@ -70,7 +70,7 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=cjs \
+            --format=esm \
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/userSync.js
 
@@ -80,7 +80,7 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=cjs \
+            --format=esm \
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/ingestScheduler.js
 
@@ -90,7 +90,7 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=cjs \
+            --format=esm \
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/themesWorker.js
 
@@ -100,7 +100,7 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=cjs \
+            --format=esm \
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/themesScheduleRunner.js
 
@@ -110,7 +110,7 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=cjs \
+            --format=esm \
             --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
             --outfile=dist/alertNotifier.js
 
