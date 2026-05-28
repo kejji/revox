@@ -51,7 +51,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --format=esm \
-            --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
+            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;"
             --outfile=dist/index.js
 
       - name: Bundle worker
@@ -61,7 +61,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --format=esm \
-            --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
+            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;"
             --outfile=dist/worker.js
 
       - name: Bundle userSync
@@ -71,7 +71,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --format=esm \
-            --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
+            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;"
             --outfile=dist/userSync.js
 
       - name: Bundle ingestScheduler
@@ -81,7 +81,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --format=esm \
-            --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
+            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;"
             --outfile=dist/ingestScheduler.js
 
       - name: Bundle themesWorker
@@ -91,7 +91,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --format=esm \
-            --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
+            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;"
             --outfile=dist/themesWorker.js
 
       - name: Bundle themesScheduleRunner
@@ -101,7 +101,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --format=esm \
-            --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
+            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;"
             --outfile=dist/themesScheduleRunner.js
 
       - name: Bundle alertNotifier
@@ -111,7 +111,7 @@ jobs:
             --platform=node \
             --target=node18 \
             --format=esm \
-            --banner:js="if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;" \
+            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;"
             --outfile=dist/alertNotifier.js
 
       - name: Force dist as ESM
