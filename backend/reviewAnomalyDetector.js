@@ -21,11 +21,11 @@ const ddb = DynamoDBDocumentClient.from(
 
 const sqs = new SQSClient({ region: REGION });
 
-const MIN_SAMPLE_SIZE = 2;//10
+const MIN_SAMPLE_SIZE = 10;
 const MAX_SAMPLE_SIZE = 100;
 const BASELINE_LIMIT = 500;
-const VOLUME_SPIKE_MULTIPLIER = 1;//3
-const NEGATIVE_RATE_INCREASE_THRESHOLD = 0;//0.3
+const VOLUME_SPIKE_MULTIPLIER = 3;
+const NEGATIVE_RATE_INCREASE_THRESHOLD = 0.3;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
