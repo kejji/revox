@@ -50,8 +50,8 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=esm \
-            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
+            --format=cjs \
+            --banner:js="const { webcrypto } = require('crypto'); if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
             --outfile=dist/index.js
 
       - name: Bundle worker
@@ -60,8 +60,8 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=esm \
-            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
+            --format=cjs \
+            --banner:js="const { webcrypto } = require('crypto'); if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
             --outfile=dist/worker.js
 
       - name: Bundle userSync
@@ -70,8 +70,8 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=esm \
-            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
+            --format=cjs \
+            --banner:js="const { webcrypto } = require('crypto'); if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
             --outfile=dist/userSync.js
 
       - name: Bundle ingestScheduler
@@ -80,8 +80,8 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=esm \
-            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
+            --format=cjs \
+            --banner:js="const { webcrypto } = require('crypto'); if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
             --outfile=dist/ingestScheduler.js
 
       - name: Bundle themesWorker
@@ -90,8 +90,8 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=esm \
-            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
+            --format=cjs \
+            --banner:js="const { webcrypto } = require('crypto'); if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
             --outfile=dist/themesWorker.js
 
       - name: Bundle themesScheduleRunner
@@ -100,8 +100,8 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=esm \
-            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
+            --format=cjs \
+            --banner:js="const { webcrypto } = require('crypto'); if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
             --outfile=dist/themesScheduleRunner.js
 
       - name: Bundle alertNotifier
@@ -110,17 +110,17 @@ jobs:
             --bundle \
             --platform=node \
             --target=node18 \
-            --format=esm \
-            --banner:js="import { webcrypto } from 'crypto'; if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
+            --format=cjs \
+            --banner:js="const { webcrypto } = require('crypto'); if (!globalThis.crypto) globalThis.crypto = webcrypto;" \
             --outfile=dist/alertNotifier.js
 
-      - name: Force dist as ESM
+      - name: Force dist as CommonJS
         run: |
-          echo '{"type":"module"}' > dist/package.json
+          echo '{"type":"commonjs"}' > dist/package.json
 
       - name: Validate worker export
         run: |
-          node -e "import('./dist/worker.js').then(w => { console.log('worker keys:', Object.keys(w)); if (typeof w.handler !== 'function') throw new Error('worker.handler missing'); })"
+          node -e "const w = require('./dist/worker.js'); console.log('worker keys:', Object.keys(w)); if (typeof w.handler !== 'function') throw new Error('worker.handler missing');"
 
       - name: Package bundle into zip
         run: |
