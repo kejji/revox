@@ -53,21 +53,24 @@ function extractAndroidAppsFromHtml(html) {
       chunk.match(/aria-label="([^"]+)"/) ||
       chunk.match(/title="([^"]+)"/);
 
-    const name = titleMatch?.[1]
+    const appTitle = titleMatch?.[1]
       ? titleMatch[1]
           .replace(/&amp;/g, "&")
           .replace(/&#39;/g, "'")
           .replace(/&quot;/g, '"')
       : appId;
 
-    const iconMatch = chunk.match(/https:\/\/play-lh\.googleusercontent\.com\/[^"\\]+/);
+    const iconMatch =
+      chunk.match(/https:\/\/play-lh\.googleusercontent\.com\/[^"\\]+/);
 
     results.push({
       store: "android",
-      name,
+      name: appTitle,
       id: appId,
       bundleId: appId,
-      icon: iconMatch?.[0] || null,
+      appId: appId, // compatibilité maximale
+      title: appTitle, // compatibilité google-play-scraper
+      icon: iconMatch?.[0] || "",
     });
   }
 
