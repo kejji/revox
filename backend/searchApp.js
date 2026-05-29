@@ -1,4 +1,5 @@
 import https from "https";
+import gplay from "google-play-scraper";
 
 export async function searchApp(req, res) {
   const { query } = req.query;
@@ -9,8 +10,6 @@ export async function searchApp(req, res) {
   }
 
   try {
-    // Importer dynamiquement les modules ESM
-    const { default: gplay } = await import("google-play-scraper");
     console.log("google-play-scraper importé");
     // Recherche iOS via l’API iTunes
     console.log("Lancement de la requête iTunes...");
