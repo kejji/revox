@@ -4,8 +4,6 @@
 
 Ce dépôt contient le **backend serverless** (API + workers Node.js) et l'**infrastructure AWS** (Terraform). Le frontend est un projet séparé.
 
-> 📄 Un audit technique complet du backend et de l'infrastructure est disponible dans [`AUDIT.md`](./AUDIT.md). Il est recommandé de le lire avant toute évolution.
-
 ---
 
 ## Sommaire
@@ -124,7 +122,7 @@ flowchart LR
     TW --> SM
 ```
 
-> ℹ️ Les Lambdas tournent actuellement en `nodejs18.x` et partagent un rôle IAM unique. Voir [`AUDIT.md`](./AUDIT.md) (A-01, A-10) pour les recommandations.
+> ℹ️ Les Lambdas tournent actuellement en `nodejs18.x` et partagent un rôle IAM d'exécution unique.
 
 ---
 
@@ -214,7 +212,7 @@ Le déploiement du code est **découplé** de Terraform :
 
 Secrets GitHub requis : `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
 
-> Note : un même artefact est déployé sur les 7 Lambdas (chaque fonction n'exécute que son handler). Voir `AUDIT.md` (A-11) pour l'optimisation par fonction.
+> Note : un même artefact est déployé sur les 7 Lambdas (chaque fonction n'exécute que son handler).
 
 ---
 
@@ -248,7 +246,7 @@ terraform apply
 - **Variables principales** (`variables.tf`) : `aws_region` (`eu-west-3`), `aws_profile` (`revox-admin`), `default_ingest_interval_minutes` (30), `ingest_scheduler_rate_expression` (`rate(5 minutes)`), `openai_secret_name` / `openai_model` / `openai_url`, `themes_default_interval_minutes` (1440), `ses_from_email`.
 - **Outputs** (`outputs.tf`) : IDs Cognito, noms de tables, URLs/ARNs de files SQS, endpoint de l'API, paramètres OpenAI — consommés par `generate-env.sh`.
 
-> Le bootstrap (bucket d'état + table de lock) est défini dans le même état que les ressources applicatives. Voir `AUDIT.md` (A-18) pour la modularisation recommandée.
+> Le bootstrap (bucket d'état + table de lock) est défini dans le même état que les ressources applicatives.
 
 ---
 
@@ -296,7 +294,7 @@ La clé de tri des avis est `ts_review = "<date ISO>#<hash FNV-1a(date,texte,aut
 - **Logs** : CloudWatch Logs. Les workers et schedulers émettent des **logs structurés JSON** (`event`, `app_pk`, compteurs). La Lambda API et l'API Gateway disposent de Log Groups dédiés (rétention 14 jours).
 - **Métriques** : métriques Lambda/SQS/DynamoDB/API Gateway natives disponibles dans CloudWatch (detailed metrics activées sur l'API).
 
-> ⚠️ **État actuel** : aucune **alarme** CloudWatch ni **dashboard** n'est défini dans l'IaC. La mise en place d'alarmes (erreurs Lambda, âge des messages SQS, profondeur DLQ, 5XX API) est une **priorité court terme** — voir `AUDIT.md` (A-16).
+> ⚠️ **État actuel** : aucune **alarme** CloudWatch ni **dashboard** n'est défini dans l'IaC. La mise en place d'alarmes (erreurs Lambda, âge des messages SQS, profondeur DLQ, 5XX API) reste à faire.
 
 ---
 
@@ -319,14 +317,14 @@ Les correspondances sont mises en file (`alerts-queue`) puis transformées en em
 | **Analyse de thèmes bloquée en `pending`** | Vérifier les logs de `revox-themes-worker` ; une erreur OpenAI marque le pending en `failed` (visible via `GET /themes/result?...&job_id=...`). Vérifier `OPENAI_SECRET_NAME` et la validité de la clé. |
 | **Emails non reçus** | Vérifier que `SES_FROM_EMAIL` est vérifié dans SES et que le compte n'est pas en sandbox ; consulter les logs de `revox-alert-notifier`. |
 | **401 Unauthorized** | JWT expiré ou audience/issuer incohérents ; vérifier `COGNITO_USER_POOL_ID` et `COGNITO_APP_CLIENT_ID`. |
-| **Message SQS retraité / email en double** | Visibilité SQS = timeout Lambda (cf. `AUDIT.md` A-04) ; un traitement long peut provoquer une re-livraison. |
+| **Message SQS retraité / email en double** | La visibilité SQS est égale au timeout Lambda ; un traitement long peut provoquer une re-livraison. |
 | **Erreur 500 sur `/reviews`** | Vérifier le format de `app_pk` (`<platform>#<bundleId>`, `#` encodé en `%23`). |
 
 ---
 
 ## Roadmap
 
-La feuille de route priorisée (court / moyen / long terme) est détaillée dans [`AUDIT.md`](./AUDIT.md#5-dette-technique--roadmap-priorisée). En résumé :
+Feuille de route priorisée (court / moyen / long terme) :
 
 - **Court terme** : DLQ + gestion des erreurs des workers, visibilité SQS, idempotence des emails, PITR DynamoDB, suppression du log de secret.
 - **Moyen terme** : découpage IAM par fonction, isolation multi-tenant, alarmes/dashboards CloudWatch, migration `nodejs20.x`, purge des dépendances mortes, tests + lint.
