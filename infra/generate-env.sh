@@ -20,6 +20,7 @@ THEMES_QUEUE_URL=$(terraform output -raw themes_queue_url)
 OPENAI_SECRET_NAME=$(terraform output -raw openai_secret_name)
 OPENAI_URL=$(terraform output -raw openai_url)
 OPENAI_MODEL=$(terraform output -raw openai_model)
+FREQUENT_MENTIONS_TABLE=$(terraform output -raw frequent_mentions_table_name)
 EOF
 
 echo "✓ .env backend generated in ../backend/.env"

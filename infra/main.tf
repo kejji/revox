@@ -346,6 +346,31 @@ resource "aws_dynamodb_table" "anomaly_state" {
 }
 
 ########################################
+# Table DynamoDB : FREQUENT_MENTIONS
+########################################
+resource "aws_dynamodb_table" "frequent_mentions" {
+  name         = "revox_frequent_mentions"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key  = "app_pk"
+  range_key = "computed_at"
+
+  attribute {
+    name = "app_pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "computed_at"
+    type = "S"
+  }
+
+  tags = {
+    Name = "Revox Frequent Mentions"
+  }
+}
+
+########################################
 # SQS : queue pour les extractions
 ########################################
 resource "aws_sqs_queue" "extraction_queue" {
@@ -521,6 +546,7 @@ resource "aws_lambda_function" "api" {
       ALERTS_TABLE                    = aws_dynamodb_table.alerts.name
       COGNITO_USER_POOL_ID            = aws_cognito_user_pool.revox_user_pool.id
       COGNITO_APP_CLIENT_ID           = aws_cognito_user_pool_client.revox_app_client.id
+      FREQUENT_MENTIONS_TABLE         = aws_dynamodb_table.frequent_mentions.name
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)

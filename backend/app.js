@@ -15,6 +15,7 @@ import { getThemesStatus } from "./themesStatus.js";
 import { getThemesResult } from "./themesResult.js";
 import { upsertThemesSchedule, getThemesSchedule, listThemesSchedules } from "./themesScheduleApi.js";
 import { createAlert, listAlerts, updateAlert, deleteAlert } from "./alerts.js";
+import { generateMentions, getMentionsResult } from "./mentions.js";
 
 const app = express();
 
@@ -173,6 +174,16 @@ app.put("/alerts/:alertId", (req, res) => {
 app.delete("/alerts/:alertId", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   deleteAlert(req, res);
+});
+
+app.post("/mentions/generate", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  generateMentions(req, res);
+});
+
+app.get("/mentions/result", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getMentionsResult(req, res);
 });
 
 export default app;

@@ -90,3 +90,7 @@ output "alerts_queue_url" {
 output "alerts_queue_arn" {
   value = trimspace(aws_sqs_queue.alerts_queue.arn)
 }
+
+output "frequent_mentions_table_name" {
+  value = trimspace(aws_dynamodb_table.frequent_mentions.name)
+}
