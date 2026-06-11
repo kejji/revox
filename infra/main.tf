@@ -438,7 +438,8 @@ resource "aws_apigatewayv2_api" "http_api" {
       "https://c9a1ce22-5aa0-4154-9698-a80bfd723859.sandbox.lovable.dev",
       "https://gptengineer-revox-83bd2a.lovable.app",
       "https://revogate.fr",
-      "https://www.revogate.fr"
+      "https://www.revogate.fr",
+      "http://localhost:5173"
     ]
     allow_methods = ["GET", "POST", "DELETE", "OPTIONS", "PUT"]
     allow_headers = ["Authorization", "Content-Type"]
