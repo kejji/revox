@@ -18,6 +18,7 @@ const REGION = process.env.AWS_REGION;
 const USER_FOLLOWS_TABLE = process.env.USER_FOLLOWS_TABLE;
 const APPS_METADATA_TABLE = process.env.APPS_METADATA_TABLE;
 const APPS_INGEST_SCHEDULE_TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
+const APP_REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 const DEFAULT_INTERVAL_MIN = Number.isFinite(parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10))
   ? parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10)
   : 60;
@@ -33,7 +34,7 @@ const nowMs = () => Date.now();
 const minutes = (n) => n * 60 * 1000;
 const appKeyOf = (platform, bundleId) => `${String(platform).toLowerCase()}#${bundleId}`;
 
-/* ------------------- helpers: app name ------------------- */
+/* ------------------- helpers ------------------- */
 async function getAppName(appKey) {
   try {
     const out = await ddb.send(new GetCommand({
@@ -47,6 +48,41 @@ async function getAppName(appKey) {
   } catch {
     return appKey.split("#")[1] || null;
   }
+}
+
+async function getNegativeRate(appKey) {
+  let lastKey;
+  let totalReviews = 0;
+  let negativeReviews = 0;
+
+  do {
+    const result = await ddb.send(new QueryCommand({
+      TableName: APP_REVIEWS_TABLE,
+      KeyConditionExpression: "app_pk = :app_pk",
+      ExpressionAttributeValues: {
+        ":app_pk": appKey
+      },
+      ProjectionExpression: "rating",
+      ExclusiveStartKey: lastKey
+    }));
+
+    const reviews = result.Items || [];
+
+    totalReviews += reviews.length;
+    negativeReviews += reviews.filter(
+      (review) => Number(review.rating) <= 3
+    ).length;
+
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+
+  if (totalReviews === 0) {
+    return 0;
+  }
+
+  return Number(
+    ((negativeReviews / totalReviews) * 100).toFixed(2)
+  );
 }
 
 /* ===================== SCHEDULE ===================== */
@@ -418,6 +454,8 @@ export async function getFollowedApps(req, res) {
         } catch (e) {}
       }
 
+      const negativeRate = await getNegativeRate(appKey);
+
       return {
         bundleId,
         platform,
@@ -430,6 +468,7 @@ export async function getFollowedApps(req, res) {
         linked_app_pks: dedup(linksMap[appKey]),
         badge_count: badge,
         total_reviews: total,
+        negative_rate: negativeRate,
         last_seen_total: effectiveSeen,
         last_seen_at: lastSeenAt
       };
