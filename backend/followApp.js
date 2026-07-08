@@ -18,7 +18,6 @@ const REGION = process.env.AWS_REGION;
 const USER_FOLLOWS_TABLE = process.env.USER_FOLLOWS_TABLE;
 const APPS_METADATA_TABLE = process.env.APPS_METADATA_TABLE;
 const APPS_INGEST_SCHEDULE_TABLE = process.env.APPS_INGEST_SCHEDULE_TABLE;
-const APP_REVIEWS_TABLE = process.env.APP_REVIEWS_TABLE;
 const DEFAULT_INTERVAL_MIN = Number.isFinite(parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10))
   ? parseInt(process.env.DEFAULT_INGEST_INTERVAL_MINUTES, 10)
   : 60;
@@ -50,39 +49,11 @@ async function getAppName(appKey) {
   }
 }
 
-async function getNegativeRate(appKey) {
-  let lastKey;
-  let totalReviews = 0;
-  let negativeReviews = 0;
-
-  do {
-    const result = await ddb.send(new QueryCommand({
-      TableName: APP_REVIEWS_TABLE,
-      KeyConditionExpression: "app_pk = :app_pk",
-      ExpressionAttributeValues: {
-        ":app_pk": appKey
-      },
-      ProjectionExpression: "rating",
-      ExclusiveStartKey: lastKey
-    }));
-
-    const reviews = result.Items || [];
-
-    totalReviews += reviews.length;
-    negativeReviews += reviews.filter(
-      (review) => Number(review.rating) <= 3
-    ).length;
-
-    lastKey = result.LastEvaluatedKey;
-  } while (lastKey);
-
-  if (totalReviews === 0) {
-    return 0;
-  }
-
-  return Number(
-    ((negativeReviews / totalReviews) * 100).toFixed(2)
-  );
+// Taux de reviews négatives, dérivé des compteurs pré-agrégés
+// (total_reviews / negative_reviews) maintenus à l'ingestion. O(1), pas de query.
+function computeNegativeRate(total, negative) {
+  if (!total || total <= 0) return 0;
+  return Number(((negative / total) * 100).toFixed(2));
 }
 
 /* ===================== SCHEDULE ===================== */
@@ -425,12 +396,14 @@ export async function getFollowedApps(req, res) {
       RequestItems: {
         [APPS_METADATA_TABLE]: {
           Keys: keys,
-          ProjectionExpression: "app_pk, #c",
-          ExpressionAttributeNames: { "#c": "total_reviews" }
+          ProjectionExpression: "app_pk, #c, #n",
+          ExpressionAttributeNames: { "#c": "total_reviews", "#n": "negative_reviews" }
         }
       }
     }));
-    const totals = new Map((bg.Responses?.[APPS_METADATA_TABLE] || []).map(i => [i.app_pk, i["total_reviews"] || 0]));
+    const metaRows = bg.Responses?.[APPS_METADATA_TABLE] || [];
+    const totals = new Map(metaRows.map(i => [i.app_pk, i["total_reviews"] || 0]));
+    const negatives = new Map(metaRows.map(i => [i.app_pk, i["negative_reviews"] || 0]));
 
     const enriched = await Promise.all(follows.map(async (it) => {
       const appKey = it.app_pk;
@@ -455,7 +428,7 @@ export async function getFollowedApps(req, res) {
         } catch (e) {}
       }
 
-      const negativeRate = await getNegativeRate(appKey);
+      const negativeRate = computeNegativeRate(total, negatives.get(appKey) ?? 0);
 
       return {
         bundleId,
