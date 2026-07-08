@@ -16,6 +16,7 @@ import gplay from "google-play-scraper";
 import store from "app-store-scraper";
 
 import { detectReviewAnomaly } from "./reviewAnomalyDetector.js";
+import { isNegativeRating } from "./ratings.js";
 
 // ---------- Config ----------
 
@@ -110,28 +111,32 @@ async function bumpAppReviewCounter({
   platform,
   bundleId,
   inserted,
+  negativeInserted = 0,
 }) {
   if (!inserted || inserted <= 0) return;
 
   const pk = appPk(platform, bundleId);
 
   try {
+    // ADD initialise l'attribut à 0 s'il est absent puis ajoute :neg (>= 0),
+    // donc pas besoin d'init explicite de negative_reviews.
     await ddbDoc.send(
       new UpdateCommand({
         TableName: METADATA_TABLE,
         Key: { app_pk: pk },
 
         UpdateExpression:
-          `ADD total_reviews :inc SET last_ingest_at = :now`,
+          `ADD total_reviews :inc, negative_reviews :neg SET last_ingest_at = :now`,
 
         ExpressionAttributeValues: {
           ":inc": inserted,
+          ":neg": negativeInserted,
           ":now": new Date().toISOString(),
         },
       })
     );
 
-    console.log(`[COUNTER] ${pk} += ${inserted}`);
+    console.log(`[COUNTER] ${pk} += ${inserted} (neg += ${negativeInserted})`);
   } catch (e) {
     console.error("[COUNTER] update error:", e?.message || e);
   }
@@ -558,10 +563,15 @@ async function runIncremental({ appName, platform, bundleId, backfillDays, gplay
     errors: ko,
   });
   
+  const negativeInserted = insertedReviews.filter((r) =>
+    isNegativeRating(r.rating)
+  ).length;
+
   return {
     fetched: fetched.length,
     sent: toInsert.length,
     inserted: ok,
+    negativeInserted,
     ddbDups: dup,
     errors: ko,
     alertsChecked: insertedReviews.length,
@@ -728,7 +738,12 @@ async function handler(event) {
         ...stats,
       });
 
-      await bumpAppReviewCounter({ platform, bundleId, inserted: stats.inserted });
+      await bumpAppReviewCounter({
+        platform,
+        bundleId,
+        inserted: stats.inserted,
+        negativeInserted: stats.negativeInserted,
+      });
       await ensureTotalInitialized({ platform, bundleId, inserted: stats.inserted });
     } catch (e) {
       console.error("Erreur worker:", e?.message || e);
