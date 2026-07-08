@@ -413,6 +413,7 @@ export async function getFollowedApps(req, res) {
     const dedup = (arr) => Array.from(new Set(Array.isArray(arr) ? arr : []));
 
     const follows = items.filter(it => it.app_pk && it.app_pk !== "APP_LINKS");
+    if (!follows.length) return res.status(200).json({ followed: [] });
 
     const seenMap = new Map(follows.map(it => [it.app_pk, {
       last_seen_total: Number.isFinite(it.last_seen_total) ? it.last_seen_total : 0,
