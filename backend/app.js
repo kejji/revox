@@ -5,6 +5,7 @@ import cors from "cors";
 import { requireAuth } from "./auth.js";
 import { searchApp } from "./searchApp.js";
 import { listReviews } from "./reviews.js";
+import { getDailyReviewVolume } from "./reviewsDailyVolume.js";
 import { exportReviewsCsv } from "./reviewsExport.js";
 import { dispatchIncrementalIngest } from "./ingest.js";
 import { followApp, unfollowApp, getFollowedApps, markFollowRead } from "./followApp.js";
@@ -75,6 +76,11 @@ app.get("/reviews", (req, res) => {
 app.get("/reviews/export", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   exportReviewsCsv(req, res);
+});
+
+app.get("/reviews/daily-volume", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getDailyReviewVolume(req, res);
 });
 
 app.post("/reviews/ingest", (req, res) => {
