@@ -162,16 +162,33 @@ export async function listAlerts(req, res) {
   const userId = req.auth?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+  // Filtre optionnel par app : app_pk unique ou liste séparée par des virgules
+  // (ex. "android#com.x,ios#com.y"), comme GET /reviews. Absent = toutes les alertes.
+  const appPks = Array.from(
+    new Set(
+      String(req.query?.app_pk || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+
   try {
-    const out = await ddb.send(
-      new QueryCommand({
-        TableName: ALERTS_TABLE,
-        KeyConditionExpression: "user_id = :uid",
-        ExpressionAttributeValues: {
-          ":uid": userId,
-        },
-      })
-    );
+    const params = {
+      TableName: ALERTS_TABLE,
+      KeyConditionExpression: "user_id = :uid",
+      ExpressionAttributeValues: { ":uid": userId },
+    };
+
+    if (appPks.length) {
+      const placeholders = appPks.map((_, i) => `:pk${i}`);
+      appPks.forEach((pk, i) => {
+        params.ExpressionAttributeValues[`:pk${i}`] = pk;
+      });
+      params.FilterExpression = `app_pk IN (${placeholders.join(", ")})`;
+    }
+
+    const out = await ddb.send(new QueryCommand(params));
 
     return res.status(200).json({ alerts: out.Items || [] });
   } catch (err) {
