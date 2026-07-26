@@ -27,7 +27,13 @@ function cleanKeywords(keywords) {
     .filter(Boolean);
 }
 
-function validateAlertBody(body) {
+// 3 types d'alertes :
+// - review_match  : mots-clés / rating sur les nouveaux avis (nécessite un critère)
+// - volume_spike  : afflux anormal de nouveaux avis (détecté à l'ingestion)
+// - negative_spike: hausse anormale de la part de négatifs (détecté à l'ingestion)
+const ALERT_TYPES = ["review_match", "volume_spike", "negative_spike"];
+
+export function validateAlertBody(body) {
   const {
     platform,
     bundleId,
@@ -49,8 +55,30 @@ function validateAlertBody(body) {
 
   const normalizedAlertType = String(alertType || "review_match");
 
-  if (!["review_match", "review_anomaly"].includes(normalizedAlertType)) {
-    return { error: "alertType doit être review_match ou review_anomaly" };
+  if (!ALERT_TYPES.includes(normalizedAlertType)) {
+    return { error: `alertType doit être ${ALERT_TYPES.join(", ")}` };
+  }
+
+  const base = {
+    alertType: normalizedAlertType,
+    platform: String(platform).toLowerCase(),
+    bundleId: String(bundleId),
+    email: String(email).trim(),
+    enabled: Boolean(enabled),
+  };
+
+  // Les alertes de pic (volume_spike / negative_spike) n'ont pas de critères :
+  // elles se déclenchent sur détection d'anomalie côté ingestion. On neutralise
+  // donc les champs propres au review_match.
+  if (normalizedAlertType !== "review_match") {
+    return {
+      value: {
+        ...base,
+        triggerOnNewReview: false,
+        keywords: [],
+        maxRating: null,
+      },
+    };
   }
 
   const cleanedKeywords = cleanKeywords(keywords);
@@ -68,7 +96,6 @@ function validateAlertBody(body) {
   }
 
   if (
-    normalizedAlertType === "review_match" &&
     !triggerOnNewReview &&
     cleanedKeywords.length === 0 &&
     parsedMaxRating === null
@@ -81,14 +108,10 @@ function validateAlertBody(body) {
 
   return {
     value: {
-      alertType: normalizedAlertType,
-      platform: String(platform).toLowerCase(),
-      bundleId: String(bundleId),
-      email: String(email).trim(),
+      ...base,
       triggerOnNewReview: Boolean(triggerOnNewReview),
       keywords: cleanedKeywords,
       maxRating: parsedMaxRating,
-      enabled: Boolean(enabled),
     },
   };
 }
