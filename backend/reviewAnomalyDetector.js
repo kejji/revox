@@ -126,17 +126,19 @@ async function saveAnalyzedState(appPk, latestReviewId) {
   );
 }
 
-async function getActiveAnomalyAlerts(appPk) {
+// Récupère les alertes de pic actives (les deux types), pour routage ensuite.
+async function getActiveSpikeAlerts(appPk) {
   const out = await ddb.send(
     new QueryCommand({
       TableName: ALERTS_TABLE,
       IndexName: "GSI_AppAlerts",
       KeyConditionExpression: "app_pk = :appPk",
-      FilterExpression: "enabled = :enabled AND alert_type = :alertType",
+      FilterExpression: "enabled = :enabled AND alert_type IN (:volType, :negType)",
       ExpressionAttributeValues: {
         ":appPk": appPk,
         ":enabled": true,
-        ":alertType": "review_anomaly",
+        ":volType": "volume_spike",
+        ":negType": "negative_spike",
       },
     })
   );
@@ -164,11 +166,11 @@ async function detectReviewAnomaly({
     return { checked: false, reason: "missing_env" };
   }
 
-  const anomalyAlerts = await getActiveAnomalyAlerts(appPk);
+  const spikeAlerts = await getActiveSpikeAlerts(appPk);
 
-  if (!anomalyAlerts.length) {
-    console.log("[ANOMALY] no active anomaly alerts", { appPk });
-    return { checked: false, reason: "no_active_anomaly_alert" };
+  if (!spikeAlerts.length) {
+    console.log("[ANOMALY] no active spike alerts", { appPk });
+    return { checked: false, reason: "no_active_spike_alert" };
   }
 
   const reviews = await getLatestReviews(appPk, BASELINE_LIMIT);
@@ -266,9 +268,27 @@ async function detectReviewAnomaly({
     return { checked: true, anomaly: false, sampleSize };
   }
 
-  for (const alert of anomalyAlerts) {
+  // Routage : chaque anomalie ne notifie que les abonnés de SON type.
+  // volume_spike -> alertes volume_spike ; negative_rate_increase -> negative_spike.
+  const volumeAnomaly = anomalies.find((a) => a.type === "volume_spike");
+  const negativeAnomaly = anomalies.find((a) => a.type === "negative_rate_increase");
+
+  const recipients = [];
+  if (volumeAnomaly) {
+    for (const alert of spikeAlerts.filter((a) => a.alert_type === "volume_spike")) {
+      recipients.push({ alert, anomalies: [volumeAnomaly] });
+    }
+  }
+  if (negativeAnomaly) {
+    for (const alert of spikeAlerts.filter((a) => a.alert_type === "negative_spike")) {
+      recipients.push({ alert, anomalies: [negativeAnomaly] });
+    }
+  }
+
+  for (const { alert, anomalies: alertAnomalies } of recipients) {
     await sendAnomalyNotification({
       type: "REVIEW_ANOMALY_DETECTED",
+      alertType: alert.alert_type,
       userId: alert.user_id,
       alertId: alert.alert_id,
       email: alert.email,
@@ -288,7 +308,7 @@ async function detectReviewAnomaly({
         negativeRatePercent: formatPercent(baselineNegativeRate),
         durationMinutesForSample: baselineDurationMinutes,
       },
-      anomalies,
+      anomalies: alertAnomalies,
       createdAt: new Date().toISOString(),
     });
   }
@@ -296,7 +316,7 @@ async function detectReviewAnomaly({
   console.log("[ANOMALY] notification queued", {
     appPk,
     sampleSize,
-    alerts: anomalyAlerts.length,
+    notified: recipients.length,
     anomalies: anomalies.map((a) => a.type),
   });
 
@@ -304,7 +324,7 @@ async function detectReviewAnomaly({
     checked: true,
     anomaly: true,
     sampleSize,
-    notified: anomalyAlerts.length,
+    notified: recipients.length,
     anomalies: anomalies.map((a) => a.type),
   };
 }
