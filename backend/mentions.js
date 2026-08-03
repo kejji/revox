@@ -8,6 +8,8 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 
 import { extractFrequentMentions } from "./frequentMentions.js";
+import { parseAppPks, canonicalAppKey } from "./appKeys.js";
+export { parseAppPks, canonicalAppKey } from "./appKeys.js";
 
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: process.env.AWS_REGION }),
@@ -31,27 +33,6 @@ async function fetchReviews(appPk, limit = 1000) {
   );
 
   return out.Items || [];
-}
-
-// app_pk unique ou liste séparée par des virgules (ex. "android#x,ios#y"),
-// dédupliqué. Comme GET /reviews.
-export function parseAppPks(value) {
-  return Array.from(
-    new Set(
-      String(value || "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    )
-  );
-}
-
-// Clé de stockage canonique pour une combinaison d'apps : la liste triée et
-// jointe par virgule. Pour une seule app, la clé = l'app_pk (rétro-compatible
-// avec les snapshots existants). Triée pour que l'ordre des apps n'ait pas
-// d'importance ("ios#a,android#b" == "android#b,ios#a").
-export function canonicalAppKey(appPks) {
-  return [...appPks].sort().join(",");
 }
 
 // Récupère les avis des N apps (jusqu'à `limit` par app) et renvoie leur UNION.

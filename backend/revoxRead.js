@@ -11,6 +11,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 
 import { callOpenAIJson } from "./openaiClient.js";
+import { parseAppPks, canonicalAppKey } from "./appKeys.js";
 
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: process.env.AWS_REGION }),
@@ -44,13 +45,26 @@ async function fetchRecentReviews(appPk, limit) {
       TableName: REVIEWS_TABLE,
       KeyConditionExpression: "app_pk = :apk",
       ExpressionAttributeValues: { ":apk": appPk },
-      ProjectionExpression: "rating, #t",
-      ExpressionAttributeNames: { "#t": "text" },
+      ProjectionExpression: "rating, #t, #d",
+      ExpressionAttributeNames: { "#t": "text", "#d": "date" },
       ScanIndexForward: false,
       Limit: limit,
     })
   );
   return out.Items || [];
+}
+
+// Échantillon pour N apps : jusqu'à `limit` avis récents par app, fusionnés,
+// puis on garde les `limit` plus récents au TOTAL. Contrairement à /mentions,
+// on plafonne le total (et pas par app) car cet échantillon part vers OpenAI :
+// le coût en tokens doit rester borné quel que soit le nombre d'apps.
+async function fetchRecentReviewsForApps(appPks, limit) {
+  const perApp = await Promise.all(appPks.map((pk) => fetchRecentReviews(pk, limit)));
+  const pickKey = (r) => r?.date || r?.ts_review || "";
+  return perApp
+    .flat()
+    .sort((a, b) => String(pickKey(b)).localeCompare(String(pickKey(a))))
+    .slice(0, limit);
 }
 
 function buildMessages(reviews) {
@@ -91,28 +105,31 @@ function buildMessages(reviews) {
 
 export async function generateRevoxRead(req, res) {
   try {
-    const appPk = req.body?.app_pk || req.query?.app_pk;
-    if (!appPk) return res.status(400).json({ error: "Paramètre requis: app_pk" });
+    const appPks = parseAppPks(req.body?.app_pk || req.query?.app_pk);
+    if (!appPks.length) return res.status(400).json({ error: "Paramètre requis: app_pk" });
 
     const limit = Math.min(
       Number(req.body?.limit || req.query?.limit || DEFAULT_SAMPLE) || DEFAULT_SAMPLE,
       MAX_SAMPLE
     );
 
-    const reviews = await fetchRecentReviews(appPk, limit);
+    const reviews = await fetchRecentReviewsForApps(appPks, limit);
     if (!reviews.length) {
-      return res.status(404).json({ error: "Aucun avis pour cette app" });
+      return res.status(404).json({ error: "Aucun avis pour cette/ces app(s)" });
     }
 
     const ai = await callOpenAIJson(buildMessages(reviews));
     const revoxRead = sanitizeRevoxRead(ai, reviews.length, process.env.OPENAI_MODEL);
+    revoxRead.app_pks = appPks;
     const computedAt = new Date().toISOString();
+    const key = canonicalAppKey(appPks);
 
-    // Upsert sur la ligne metadata de l'app.
+    // Upsert sur la ligne metadata (clé = app_pk unique, ou clé canonique de la
+    // combinaison pour plusieurs apps).
     await ddb.send(
       new UpdateCommand({
         TableName: METADATA_TABLE,
-        Key: { app_pk: appPk },
+        Key: { app_pk: key },
         UpdateExpression: "SET revox_read = :r, revox_read_at = :at",
         ExpressionAttributeValues: { ":r": revoxRead, ":at": computedAt },
       })
@@ -120,7 +137,8 @@ export async function generateRevoxRead(req, res) {
 
     return res.json({
       ok: true,
-      app_pk: appPk,
+      app_pk: key,
+      app_pks: appPks,
       revox_read: revoxRead,
       revox_read_at: computedAt,
     });
@@ -132,26 +150,29 @@ export async function generateRevoxRead(req, res) {
 
 export async function getRevoxRead(req, res) {
   try {
-    const appPk = req.query?.app_pk;
-    if (!appPk) return res.status(400).json({ error: "Paramètre requis: app_pk" });
+    const appPks = parseAppPks(req.query?.app_pk);
+    if (!appPks.length) return res.status(400).json({ error: "Paramètre requis: app_pk" });
+
+    const key = canonicalAppKey(appPks);
 
     const out = await ddb.send(
       new GetCommand({
         TableName: METADATA_TABLE,
-        Key: { app_pk: appPk },
+        Key: { app_pk: key },
         ProjectionExpression: "revox_read, revox_read_at",
       })
     );
 
     const item = out.Item;
     if (!item?.revox_read) {
-      return res.json({ ok: true, found: false, app_pk: appPk, revox_read: null });
+      return res.json({ ok: true, found: false, app_pk: key, app_pks: appPks, revox_read: null });
     }
 
     return res.json({
       ok: true,
       found: true,
-      app_pk: appPk,
+      app_pk: key,
+      app_pks: appPks,
       revox_read: item.revox_read,
       revox_read_at: item.revox_read_at || null,
     });
