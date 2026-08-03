@@ -4,7 +4,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { sanitizeRevoxRead } from "./revoxRead.js";
+import { sanitizeRevoxRead, capComment } from "./revoxRead.js";
+
+const nonSpace = (s) => s.replace(/\s/g, "").length;
 
 test("comment trim, rating arrondi et borné 1..5", () => {
   const r = sanitizeRevoxRead({ comment: "  Super appli  ", rating: 4.6 }, 500, "gpt-4o-mini");
@@ -26,4 +28,23 @@ test("rating non numérique -> null", () => {
 
 test("comment manquant -> chaîne vide", () => {
   assert.equal(sanitizeRevoxRead({ rating: 3 }, 1).comment, "");
+});
+
+test("capComment: commentaire court inchangé", () => {
+  const s = "Très bonne appli, simple et rapide.";
+  assert.equal(capComment(s), s);
+});
+
+test("capComment: >250 caractères hors espaces -> tronqué, <=250, finit par …", () => {
+  const long = Array.from({ length: 80 }, () => "banque").join(" "); // 80*6 = 480 hors espaces
+  const out = capComment(long);
+  assert.ok(nonSpace(out) <= 250, `nonSpace=${nonSpace(out)}`);
+  assert.ok(out.endsWith("…"));
+  assert.ok(!/\s…$/.test(out)); // pas d'espace juste avant l'ellipse
+});
+
+test("sanitizeRevoxRead applique le plafond de 250", () => {
+  const long = Array.from({ length: 100 }, () => "mot").join(" ");
+  const { comment } = sanitizeRevoxRead({ comment: long, rating: 4 }, 500);
+  assert.ok(nonSpace(comment) <= 250);
 });
