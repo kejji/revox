@@ -26,11 +26,34 @@ const MAX_SAMPLE = 1000;
 
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : s || "");
 
-// Normalise la sortie du modèle : commentaire trim + note entière bornée 1..5.
+// Longueur maximale du commentaire type, comptée HORS espaces.
+const MAX_COMMENT_NONSPACE = 250;
+
+const nonSpaceLen = (s) => s.replace(/\s/g, "").length;
+
+// Garde-fou : le modèle est peu fiable pour compter les caractères, donc on
+// applique la limite côté serveur. Coupe sur une frontière de mot et ajoute "…"
+// tout en garantissant un total (ellipse comprise) <= MAX_COMMENT_NONSPACE.
+export function capComment(comment) {
+  const text = String(comment || "").trim();
+  if (nonSpaceLen(text) <= MAX_COMMENT_NONSPACE) return text;
+
+  let out = "";
+  for (const word of text.split(/\s+/)) {
+    const candidate = out ? `${out} ${word}` : word;
+    // +1 réserve la place de l'ellipse (un caractère hors espace).
+    if (nonSpaceLen(candidate) + 1 > MAX_COMMENT_NONSPACE) break;
+    out = candidate;
+  }
+
+  return `${(out || text.slice(0, 1)).trimEnd()}…`;
+}
+
+// Normalise la sortie du modèle : commentaire trim + plafond + note bornée 1..5.
 export function sanitizeRevoxRead(ai, reviewsCount, model) {
   const rating = Number(ai?.rating);
   return {
-    comment: String(ai?.comment || "").trim(),
+    comment: capComment(ai?.comment),
     rating: Number.isFinite(rating)
       ? Math.min(5, Math.max(1, Math.round(rating)))
       : null,
@@ -85,7 +108,9 @@ function buildMessages(reviews) {
         "À partir d'un ensemble d'avis d'une application mobile, rédige UN SEUL commentaire type,",
         "comme si un utilisateur représentatif résumait l'expérience générale de la base.",
         "Il doit synthétiser les points récurrents (positifs ET négatifs), rester naturel et crédible,",
-        "dans la langue majoritaire des avis, en 2 à 4 phrases. N'invente pas de faits absents des avis.",
+        "dans la langue majoritaire des avis, en 1 à 2 phrases courtes.",
+        "Le commentaire ne doit JAMAIS dépasser 250 caractères hors espaces — sois concis.",
+        "N'invente pas de faits absents des avis.",
         "Donne aussi une note représentative de 1 à 5 (entier) reflétant le ressenti global.",
         "Réponds STRICTEMENT en JSON conforme au schéma fourni.",
       ].join(" "),
