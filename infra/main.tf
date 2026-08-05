@@ -548,6 +548,7 @@ resource "aws_lambda_function" "api" {
       COGNITO_USER_POOL_ID            = aws_cognito_user_pool.revox_user_pool.id
       COGNITO_APP_CLIENT_ID           = aws_cognito_user_pool_client.revox_app_client.id
       FREQUENT_MENTIONS_TABLE         = aws_dynamodb_table.frequent_mentions.name
+      REVOX_USERS_TABLE               = aws_dynamodb_table.users.name
     }
   }
   # Indique un ZIP (mêmes champs qu'avant, mais pointant sur le dummy)
