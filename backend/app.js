@@ -18,6 +18,7 @@ import { upsertThemesSchedule, getThemesSchedule, listThemesSchedules } from "./
 import { createAlert, listAlerts, updateAlert, deleteAlert } from "./alerts.js";
 import { generateMentions, getMentionsResult } from "./mentions.js";
 import { generateRevoxRead, getRevoxRead } from "./revoxRead.js";
+import { getMe, updatePreferences } from "./userProfile.js";
 
 const app = express();
 
@@ -202,6 +203,16 @@ app.post("/revox-read/generate", (req, res) => {
 app.get("/revox-read", (req, res) => {
   if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
   getRevoxRead(req, res);
+});
+
+app.get("/me", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  getMe(req, res);
+});
+
+app.put("/me/preferences", (req, res) => {
+  if (!req.auth?.sub) return res.status(401).json({ error: "Unauthorized" });
+  updatePreferences(req, res);
 });
 
 export default app;
